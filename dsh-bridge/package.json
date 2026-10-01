@@ -1,0 +1,34 @@
+{
+  "name": "dsh-paseo-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH profile bundle that serves a Paseo-drivable runtime over stdio JSON-RPC, including user-question cards, plan mode and thinking-effort control.",
+  "author": "jixy <467677527@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxing7954/paseo-dsh.git",
+    "directory": "dsh-bridge"
+  },
+  "homepage": "https://github.com/liuxing7954/paseo-dsh#readme",
+  "bugs": "https://github.com/liuxing7954/paseo-dsh/issues",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4"
+  }
+}

@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# TypeScript build output and one-off verification harnesses
+.dbg/
+.repro/
+dist/
+*.tsbuildinfo
+
+# Probe output captured while debugging; regenerate, do not commit
+*.jsonl
+
+# Credentials and machine-local configuration: never commit these
+.env
+.env.*
+*.credentials.yaml
+credentials.json
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp

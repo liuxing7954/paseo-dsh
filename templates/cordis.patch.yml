@@ -1,0 +1,71 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THIS IS THE ONLY PART YOU MUST EDIT.
+#
+# Everything else was installed for you. What goes here is your model route and
+# — if your endpoint supports reasoning — the reasoning levels it actually
+# accepts. DSH does not discover that automatically, and a route the installed
+# catalog does not know reports *no* reasoning at all.
+#
+# Before filling this in, probe your endpoint:
+#
+#   node tools/probe-provider.mjs \
+#     --base-url https://your-gateway/v1 \
+#     --api-key-env YOUR_KEY_ENV_VAR \
+#     --model your-model-id
+#
+# It prints a ready-to-paste fragment and tells you whether you also need the
+# `supportsDeveloperRole: false` switch.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A worked example, with the two pitfalls called out:
+#
+# - id: llm-pi-ai
+#   name: "@deepseek-ai/dsh-llm-pi-ai"
+#   config:
+#     providers:
+#       your-route:
+#         displayName: Your Route
+#         apiKeyEnv: YOUR_KEY_ENV_VAR      # the key itself lives in ~/.dsh/.credentials.yaml
+#         api: openai-completions
+#         baseURL: https://your-gateway/v1
+#
+#         # PITFALL 1: declaring reasoningEfforts makes pi-ai carry the system
+#         # prompt in the OpenAI reasoning-model `developer` role. Gateways that
+#         # only accept `system` then reject every turn with a 422. The probe
+#         # tells you whether you need this line; it is harmless if you do not.
+#         compat:
+#           supportsDeveloperRole: false
+#
+#         models:
+#           - id: your-model
+#             name: your-model
+#             reasoningEfforts:
+#               # PITFALL 2: `off` must carry NO value. Turning thinking off
+#               # means omitting the parameter; most gateways reject the literal
+#               # string "off".
+#               off:
+#               low: low
+#               medium: medium
+#               high: high
+#               # `xhigh` and `max` are different from the levels above: DSH
+#               # treats a missing `max`/`xhigh` key as UNSUPPORTED rather than
+#               # as a default, so list them explicitly or they will not appear.
+#               max: max
+#
+# A model that genuinely does not reason should say so explicitly:
+#
+#             reasoningEfforts: false
+#
+# Finally, name the route new agents default to:
+#
+# - id: agent-default-model
+#   name: "@deepseek-ai/dsh-agent-default-model"
+#   config:
+#     provider: your-route
+#     model: your-model
+
+# Nothing is configured yet — uncomment and edit the examples above.
+[]

@@ -1,0 +1,31 @@
+{
+  "name": "paseo-plugin-dsh",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Paseo provider plugin that drives DeepSeek Harness natively, with question cards, plan mode, thinking-effort control and steering.",
+  "author": "jixy <467677527@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxing7954/paseo-dsh.git",
+    "directory": "paseo-plugin"
+  },
+  "homepage": "https://github.com/liuxing7954/paseo-dsh#readme",
+  "bugs": "https://github.com/liuxing7954/paseo-dsh/issues",
+  "license": "MIT",
+  "files": [
+    "paseo-plugin.json",
+    "index.server.ts",
+    "server/",
+    "icon.svg"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.9.2",
+    "@getpaseo/protocol": "0.9.2",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}
