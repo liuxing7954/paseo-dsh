@@ -14,10 +14,76 @@ DSH 侧是一个 profile bundle。
 | 插话（steer） | — | ✅ 注入当前回合，而不是排到下一个 |
 | 终止后续聊 | — | ✅ 只取消当前回合，会话保留 |
 
-## 快速开始
+## 🤖 复制这段给你的 AI Agent（推荐）
+
+把下面整段复制进 Claude Code / Codex / Cursor / 任何能执行命令的 Agent。它会读文档、
+探测你的模型、装好一切，**你只需要最后重启一次 Paseo**。
+
+> 它需要读写 `~/.dsh/` 和 `~/.paseo/`、执行 shell 命令。给它这些权限，但**先自己扫一眼
+> 下面的内容**——它做的事和你想让它做的事应该是一致的。
+
+````text
+你是一个部署助手，帮我把这台机器上的 Paseo 接上 DeepSeek Harness（DSH）。
+
+仓库：https://github.com/liuxing7954/paseo-dsh
+克隆到本地，然后【完整读一遍 docs/ADOPTION.md】再动手。不要凭猜测改任何文件。
+
+■ 第一步：检查前提
+确认 dsh、paseo、node 都在 PATH 上，且 paseo 版本 >= 0.9.2。
+跑 ./install.sh --check 看它怎么说。
+缺任何一样就停下来告诉我，不要替我安装它们。
+
+■ 第二步：确定用哪个模型
+先看我已经有没有 DSH profile：ls ~/.dsh/profiles/
+如果已有，读它的 cordis.patch.yml，【复用我已经配好的 provider】
+（baseURL、apiKeyEnv、模型 id），不要让我重新输一遍。
+如果确实没有，再问我这三件事：
+  1. LLM 端点 baseURL 是什么
+  2. API key 放在哪个环境变量里（或者我直接给你 key）
+  3. 要用哪些模型 id
+拿到 key 后写进 ~/.dsh/.credentials.yaml 的 refs 段。
+不要把 key 写进任何会被提交的文件，也不要在终端回显它。
+
+■ 第三步：探测模型能力（关键，不许跳过）
+  node tools/probe-provider.mjs --base-url <端点> --api-key-env <变量名> --model <模型id>
+它输出的 YAML 片段【原样采用】。它会顺便告诉你两个必须处理的坑：
+  - 如果 developer 角色被拒 -> 配置里必须有 compat.supportsDeveloperRole: false
+  - reasoningEfforts 里的 off 必须留空（不写值）
+  - 如果探测出 max，必须显式写进配置
+如果探测工具报错，把完整错误贴给我，不要自己编一个配置。
+
+■ 第四步：安装
+把脚本会打印的那段「Plugins are trusted, unsandboxed code...」安全提示
+【原文转述给我】，并明确问我是否继续。得到我同意之后再跑：
+  ./install.sh --yes
+不加 --yes 它会停下来等输入，你等不到。
+
+■ 第五步：写配置
+把第三步探测出的片段填进 ~/.dsh/profiles/paseo/cordis.patch.yml，
+并补一段 agent-default-model 指向我选的主模型。
+如果那个文件里已经有内容，只做补充，不要覆盖。
+
+■ 第六步：验证（不许跳）
+  node harness/catalog.mjs
+确认输出里有我的模型，且每个模型的 efforts 列表和探测结果一致。
+  node harness/probe.mjs
+确认提问往返成功，且没有失败事件。
+
+■ 第七步：汇报
+告诉我：
+  - 需要重启什么（Paseo daemon）
+  - 重启后我在 Paseo 里该选哪个 provider
+  - 任何你没做到、或者不确定的地方
+
+全程卡住就停下来问我。不要猜，不要跳过验证，不要为了让流程走完而伪造成功。
+````
+
+## 手动安装
+
+如果你更想自己来：
 
 ```bash
-git clone <this repo> && cd paseo-dsh
+git clone https://github.com/liuxing7954/paseo-dsh && cd paseo-dsh
 ./install.sh --check     # 先看前提条件，不做改动
 ./install.sh             # 安装 profile + 插件，并启用
 ```
@@ -104,6 +170,8 @@ node harness/route-test.mjs   # 逐个路由测试可用性
 
 - [docs/ADOPTION.md](docs/ADOPTION.md) — 改造指南：改动点、配置方法、踩坑清单
 - [docs/FIELD-NOTES.md](docs/FIELD-NOTES.md) — 18 个真实缺陷的症状 → 根因 → 修法
+- [AGENTS.md](AGENTS.md) — 给 AI Agent 的说明（Codex 等会自动读取）。不管你是被叫来
+  装它、还是被叫来改它，先看这个
 
 ## 联系
 

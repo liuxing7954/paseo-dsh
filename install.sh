@@ -13,24 +13,28 @@
 # touch is backed up first. Re-running it is safe.
 #
 # Usage:
-#   ./install.sh [--profile NAME] [--repo PATH] [--check]
+#   ./install.sh [--profile NAME] [--repo PATH] [--check] [--yes]
 #
 #   --profile NAME   DSH profile to create (default: paseo)
 #   --repo PATH      checkout to link from (default: this script's directory)
 #   --check          verify prerequisites and report, change nothing
+#   --yes, -y        skip the confirmation prompt (the security notice is still
+#                    printed, so an AI agent can relay it and get consent first)
 #
 set -euo pipefail
 
 PROFILE="paseo"
 REPO=""
 CHECK_ONLY=0
+ASSUME_YES=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="${2:?--profile needs a value}"; shift 2 ;;
     --repo)    REPO="${2:?--repo needs a value}"; shift 2 ;;
     --check)   CHECK_ONLY=1; shift ;;
-    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --yes|-y)  ASSUME_YES=1; shift ;;
+    -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -83,12 +87,18 @@ cat <<'WARNING'
   └──────────────────────────────────────────────────────────────────────┘
 
 WARNING
-printf 'Continue? [y/N] '
-read -r reply
-case "$reply" in
-  y|Y|yes|YES) ;;
-  *) echo "aborted"; exit 1 ;;
-esac
+if [ "$ASSUME_YES" -eq 1 ]; then
+  # An agent passed --yes, which means it should have shown the notice above
+  # and obtained consent before invoking this script.
+  printf 'Continuing (--yes).\n'
+else
+  printf 'Continue? [y/N] '
+  read -r reply
+  case "$reply" in
+    y|Y|yes|YES) ;;
+    *) echo "aborted"; exit 1 ;;
+  esac
+fi
 
 head "creating the DSH profile at $PROFILE_DIR"
 mkdir -p "$PROFILE_DIR"
