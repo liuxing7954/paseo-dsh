@@ -123,7 +123,7 @@ paseo-dsh/
 │       └── timeline.ts  #   DSH 会话事件 → Paseo 时间线
 ├── tools/               # 能力探测：帮你填自己的模型配置
 ├── templates/           # profile 配置模板（含两处必踩的坑的注释）
-├── harness/             # 独立探针，不依赖 Paseo 即可验证桥接
+├── harness/             # 独立探针，不依赖 Paseo 即可验证桥接与插件
 └── docs/                # 改造指南 + 实战缺陷记录
 ```
 
@@ -154,7 +154,19 @@ JSON-RPC 通信。会话之间进程隔离，一个崩了不会拖垮 daemon。
 node harness/catalog.mjs      # 列出 provider / 模型 / 每个模型真实支持的思考档位
 node harness/probe.mjs        # 端到端跑一轮提问往返
 node harness/route-test.mjs   # 逐个路由测试可用性
+
+# 插件层检查（断言事件形状，不看界面）
+cd paseo-plugin
+npx tsc --noEmit false --outDir .dbg --declaration false \
+  --module commonjs --moduleResolution node
+echo '{"type":"commonjs"}' > .dbg/package.json
+cp ../harness/plugin-check.cjs .dbg/ && cd .dbg && node plugin-check.cjs
+rm -rf ../.dbg
 ```
+
+`plugin-check.cjs` 覆盖三件**曾经静默出错**的事：用量事件有没有真数字、非文本内容块
+有没有被悄悄丢掉、未知输入是报失败还是谎报成功。这三类 bug 在界面上看不出来——
+不报错，只是悄悄不对。
 
 验证方法本身也值得一读——界面会乐观显示、会缓存、会骗你，所以断言要打在协议层。
 [ADOPTION.md 第 5 节](docs/ADOPTION.md) 讲了具体做法，包括一些反直觉的坑

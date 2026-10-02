@@ -63,6 +63,10 @@ node harness/route-test.mjs   # 逐条路由跑真实回合
 cd paseo-plugin && npx tsc --noEmit
 ```
 
+**动了插件层（`paseo-plugin/server/*.ts`）就一定跑 `harness/plugin-check.cjs`**——
+它断言的是事件形状，而事件形状错了界面不会报错，只会悄悄不对。运行步骤写在那个文件
+的头部注释里（插件是 TS，要先编成 CJS 才能 require）。
+
 **注意一个反直觉的坑**：`waitFor` 式的等待会匹配到上一条陈旧事件。换阶段时清空事件数组，
 或按 `turnId` 过滤——有一次就是因为匹配到了被取消那一回合的事件，误判成"取消后对话
 无法继续"，差点去改一段本来正确的代码。
