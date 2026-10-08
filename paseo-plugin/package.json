@@ -1,9 +1,17 @@
 {
-  "name": "paseo-plugin-dsh",
-  "private": true,
+  "name": "paseo-dsh",
   "version": "0.1.0",
-  "description": "Paseo provider plugin that drives DeepSeek Harness natively, with question cards, plan mode, thinking-effort control and steering.",
+  "description": "DeepSeek Harness (dsh) as a native Paseo provider: question cards, plan mode, thinking levels, steering, images and a real slash menu.",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "provider"
+  ],
   "author": "jixy <467677527@qq.com>",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/liuxing7954/paseo-dsh.git",
@@ -11,15 +19,30 @@
   },
   "homepage": "https://github.com/liuxing7954/paseo-dsh#readme",
   "bugs": "https://github.com/liuxing7954/paseo-dsh/issues",
-  "license": "MIT",
   "files": [
     "paseo-plugin.json",
     "index.server.ts",
     "server/",
-    "icon.svg"
+    "icon.svg",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
+    "generate": "node scripts/generate-bridge-assets.mjs",
+    "prepack": "node scripts/generate-bridge-assets.mjs",
     "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@getpaseo/plugin": ">=0.9.2",
+    "@getpaseo/protocol": ">=0.9.2"
+  },
+  "peerDependenciesMeta": {
+    "@getpaseo/plugin": {
+      "optional": true
+    },
+    "@getpaseo/protocol": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.9.2",

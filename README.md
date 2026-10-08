@@ -55,10 +55,11 @@ DSH 侧是一个 profile bundle。
 如果探测工具报错，把完整错误贴给我，不要自己编一个配置。
 
 ■ 第四步：安装
-把脚本会打印的那段「Plugins are trusted, unsandboxed code...」安全提示
-【原文转述给我】，并明确问我是否继续。得到我同意之后再跑：
-  ./install.sh --yes
-不加 --yes 它会停下来等输入，你等不到。
+把 Paseo 会打印的那段「Plugins are trusted, unsandboxed code...」安全提示
+【原文转述给我】，并明确问我是否继续。得到我同意之后再装：
+  paseo plugin add npm:paseo-dsh
+（插件首次加载会自己准备好 DSH profile，不需要跑任何脚本。）
+装完重启 Paseo daemon。
 
 ■ 第五步：写配置
 把第三步探测出的片段填进 ~/.dsh/profiles/paseo/cordis.patch.yml，
@@ -80,17 +81,20 @@ DSH 侧是一个 profile bundle。
 全程卡住就停下来问我。不要猜，不要跳过验证，不要为了让流程走完而伪造成功。
 ````
 
-## 手动安装
+## 安装（推荐，一行）
 
-如果你更想自己来：
+用 Paseo 自己的插件安装器，装完重启 daemon：
 
 ```bash
-git clone https://github.com/liuxing7954/paseo-dsh && cd paseo-dsh
-./install.sh --check     # 先看前提条件，不做改动
-./install.sh             # 安装 profile + 插件，并启用
+paseo plugin add npm:paseo-dsh
+# 或者直接从仓库装：
+paseo plugin add liuxing7954/paseo-dsh --path paseo-plugin
 ```
 
-安装脚本不会覆盖你已有的模型配置，动到的每个文件都会先备份。
+插件**首次加载会自己准备好 DSH profile**（`~/.dsh/profiles/paseo`）和它内嵌的
+stdio bridge——不需要 clone、不需要跑任何脚本。之后**更新也只用 Paseo 的这一条链路**：
+`paseo plugin update`（npm）或 `git pull`（目录/仓库源）+ 重启 daemon，profile 会随
+插件版本一起更新。
 
 装完之后**只有一件事需要你填**：profile 里的模型路由。不确定你的端点支持什么，
 先探测：
@@ -106,6 +110,22 @@ node tools/probe-provider.mjs \
 真的可用，并吐出一段可直接粘贴的配置。
 
 **完整走查与踩坑清单见 [docs/ADOPTION.md](docs/ADOPTION.md)。**
+
+## 本地开发 / 离线安装
+
+改本仓库代码时，用 `install.sh` 把 checkout 作为**目录源**接入：它会建好 profile、
+把 `dsh-bridge` 链进 profile，并替你注册插件。之后 `git pull` + 重启 daemon 即生效。
+
+```bash
+git clone https://github.com/liuxing7954/paseo-dsh && cd paseo-dsh
+./install.sh --check     # 先看前提条件，不做改动
+./install.sh             # 创建 profile + 链接 bridge + 注册插件
+```
+
+> 开发时改了 `dsh-bridge/`，记得跑 `node paseo-plugin/scripts/generate-bridge-assets.mjs`
+> 重新内嵌 bridge（`npm publish` 也会自动跑），否则插件自举用的还是旧桥。
+
+安装脚本不会覆盖你已有的模型配置，动到的每个文件都会先备份。
 
 ## 组成
 
