@@ -30,4 +30,10 @@ live in the main repository: **https://github.com/liuxing7954/paseo-dsh**
 
 Requires Paseo ≥ 0.9.2 and the official `dsh` on the daemon's `PATH`.
 
+## Versioning
+
+`major.minor` tracks the DSH line this plugin targets — `0.2.x` of this plugin is
+built against DSH `0.2.x`. The patch number is this plugin's own release count and
+does not follow DSH. Install the line matching the `dsh` on your daemon.
+
 MIT.

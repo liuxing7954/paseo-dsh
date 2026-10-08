@@ -200,6 +200,11 @@ rm -rf ../.dbg
 - DSH 已安装且 `dsh` 在 PATH 上
 - Node ≥ 18（探测工具用了内建 `fetch`）
 
+## 版本策略
+
+插件的 `major.minor` **跟随它所适配的 DSH 线**：`0.2.x` 的插件对应 DSH `0.2.x`，
+patch 位是插件自己的发布计数。装的时候挑与 daemon 上 `dsh` 同一条线的版本即可。
+
 ## 相关文档
 
 - [docs/ADOPTION.md](docs/ADOPTION.md) — 改造指南：改动点、配置方法、踩坑清单
