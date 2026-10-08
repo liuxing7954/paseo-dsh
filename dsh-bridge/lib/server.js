@@ -23,6 +23,38 @@ function encodedImage(block) {
   return block.type === 'image' && 'data' in block;
 }
 
+/**
+ * Media type read from the raster's own magic bytes, or undefined when the
+ * bytes are not one of the formats DSH admits.
+ *
+ * The prompt's declared `mimeType` is not trustworthy: Paseo derives it from
+ * the upload's filename extension, so a JPEG saved as `foo.png` arrives as
+ * `{mimeType: "image/png", data: <jpeg>}`. DSH verifies the declared type
+ * against the decoded bytes and refuses a mismatch, which would reject a
+ * perfectly readable picture. The bytes are the authoritative answer, and this
+ * is a trusted translator rather than a caller asserting content, so read the
+ * type from them.
+ */
+function sniffImageMediaType(bytes) {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+    return 'image/gif';
+  }
+  if (
+    bytes.length >= 12
+    && bytes.toString('ascii', 0, 4) === 'RIFF'
+    && bytes.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return undefined;
+}
+
 async function durablePromptContent(ctx, blocks) {
   const images = blocks.filter(encodedImage);
   if (images.length === 0) return blocks;
@@ -30,7 +62,13 @@ async function durablePromptContent(ctx, blocks) {
   if (attachments === undefined) throw new Error('image prompt requires an attachment store');
   const refs = await admitEncodedImages(
     attachments,
-    images.map((image) => ({ data: image.data, mediaType: image.mimeType })),
+    images.map((image) => {
+      const bytes = Buffer.from(typeof image.data === 'string' ? image.data : '', 'base64');
+      // Prefer the bytes; keep the declared type only when they are unreadable,
+      // so an unsupported format still fails loudly with DSH's own error.
+      const mediaType = sniffImageMediaType(bytes) ?? image.mimeType;
+      return { data: image.data, mediaType };
+    }),
   );
   let next = 0;
   return blocks.map((block) =>

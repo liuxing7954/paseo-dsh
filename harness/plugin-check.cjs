@@ -58,8 +58,25 @@ const check = (name, pass, detail) => {
 };
 
 (async () => {
-  const conn = await registration.connect({ capabilities: [] });
+  // Offer every capability the plugin could support. `prompt.image` is asserted
+  // below: it is the switch that lets Paseo send an attached picture at all, and
+  // a missing one fails the send outright rather than degrading.
+  const conn = await registration.connect({
+    capabilities: [
+      "prompt.message",
+      "prompt.image",
+      "prompt.steer",
+      "session.configure",
+      "permission",
+    ],
+  });
   conn.onEvent((event) => events.push(event));
+
+  check(
+    "provider declares prompt.image",
+    Array.isArray(conn.capabilities) && conn.capabilities.includes("prompt.image"),
+    `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
+  );
 
   await conn.send({
     type: "session.open",
@@ -144,6 +161,53 @@ const check = (name, pass, detail) => {
 
   const failed = events.filter((e) => e.type === "request.failed" || e.type === "session.runtime_failed");
   check("turn produced no failure event", failed.length === 0, failed.length ? JSON.stringify(failed[0]).slice(0, 140) : "");
+
+  // 2b. a mislabeled image is accepted from its bytes, not its declared type
+  //
+  // Paseo derives an upload's media type from its filename extension, so a JPEG
+  // saved as `foo.png` arrives as `image/png` over JPEG bytes. DSH verifies the
+  // declared type against the decoded bytes and refuses a mismatch, so the
+  // bridge must read the type from the bytes it actually holds.
+  const mark = events.length;
+  // A 2x2 JPEG (FFD8FF...) deliberately declared as PNG.
+  const jpegDeclaredPng =
+    "/9j/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AIADEVf/2Q==";
+  await conn.send({
+    type: "session.prompt",
+    sessionId,
+    prompt: {
+      input: {
+        type: "message",
+        content: [
+          { type: "text", text: "Reply with exactly: MISLABEL-OK" },
+          { type: "image", data: jpegDeclaredPng, mimeType: "image/png" },
+        ],
+      },
+    },
+  });
+
+  const mislabelStarted = Date.now();
+  let mislabelTurnCompleted = false;
+  // Slice from `mark`: a stale `turn completed` from the first prompt would
+  // otherwise satisfy this wait the instant it starts.
+  while (Date.now() - mislabelStarted < 150000) {
+    if (events.slice(mark).some((e) => e.type === "session.turn" && e.state === "completed")) {
+      mislabelTurnCompleted = true;
+      break;
+    }
+    await sleep(200);
+  }
+  await sleep(1200);
+  const mislabelFailed = events
+    .slice(mark)
+    .filter((e) => e.type === "request.failed" || e.type === "session.runtime_failed");
+  check(
+    "mislabeled image type is corrected from its bytes",
+    mislabelTurnCompleted && mislabelFailed.length === 0,
+    mislabelFailed.length
+      ? mislabelFailed[0].error?.message
+      : `turn completed=${mislabelTurnCompleted}`,
+  );
 
   // 3. an unsupported input must fail loudly
   const bogusId = "req-unknown-type";

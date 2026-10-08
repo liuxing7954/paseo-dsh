@@ -22,7 +22,17 @@ import {
 import { DshProcess, type DshCatalog } from "./dsh-process";
 import { DshSession, MODES, parseRoute } from "./session";
 
-const CAPABILITIES = ["prompt.message", "prompt.steer", "session.configure", "permission"] as const;
+const CAPABILITIES = [
+  "prompt.message",
+  // Without this Paseo refuses to send any prompt carrying an image, so an
+  // attached picture never reaches the bridge (the same class of silent loss as
+  // an un-declared `prompt.steer`). The bridge already admits image blocks into
+  // DSH's attachment store; declaring the capability is what makes Paseo use it.
+  "prompt.image",
+  "prompt.steer",
+  "session.configure",
+  "permission",
+] as const;
 
 /** Provider id registered with Paseo; distinct from the ACP `deepseek-harness` entry. */
 export const PROVIDER_ID = "deepseek-harness-native";

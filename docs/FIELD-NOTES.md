@@ -175,14 +175,27 @@ provider 级默认值改成**所有模型都支持的交集**而不是并集。
 `inputTokens` → `inputTokens`，`cacheReadTokens` → `cachedInputTokens`，
 `outputTokens` → `outputTokens`。
 
-### 16. 非文本内容块被静默丢弃
+### 16. 非文本内容块被静默丢弃（图片：三层，修了三次才通）
 
 **症状**：发图片时，图片凭空消失，模型还煞有介事地回答了一个纯文本问题。
 
-**根因**：bridge 和 `DshProcess` **都已经支持** content blocks（含 attachment store），
-只有最上层把它们映射成空字符串并传了 `undefined`——典型的"管线铺好但没接线"。
+**根因（第一层）**：bridge 和 `DshProcess` **都已经支持** content blocks（含 attachment
+store），只有最上层把它们映射成空字符串并传了 `undefined`——典型的"管线铺好但没接线"。
 
-**修法**：原样透传；遇到没有对应类型的块**抛错**而不是跳过。
+**修法（第一层）**：原样透传；遇到没有对应类型的块**抛错**而不是跳过。
+
+**但这一层修完图片仍然不通**——因为它其实断了三层，每层都不报错：
+
+| 层 | 症状 | 根因 | 修法 |
+|----|------|------|------|
+| Paseo 插件 | 带图 prompt 被直接拒绝：`Provider does not support prompt.image` | `CAPABILITIES` 里漏了 `prompt.image`，`negotiateProviderCapabilities` 把它过滤掉了 | 在 `CAPABILITIES` 里声明 `prompt.image` |
+| DSH 请求投影 | 图片到了 DSH，但模型收到的是 `[image omitted because this model accepts text only; ...]` 占位文本 | 路由没声明图片模态，默认按 `[text]` 投影，图片被换成文字 | profile 里 `defaultInput: [text, image]` 或模型条目 `input: [text, image]` |
+| bridge 附件入库 | 报错 `Declared image type does not match its bytes.` | Paseo 按**文件名后缀**判定 `mimeType`；一张 JPEG 存成 `.png` 就会以 `image/png` 声明 JPEG 字节，DSH 校验声明与字节后拒绝 | bridge 按**魔数嗅探**真实类型，不信任声明的 `mimeType` |
+
+**教训**：一条"数据丢失"路径往往横跨多个组件，**每个组件都认为自己的上游/下游会处理**。
+第一层修好时模型能"看到"附件已存在的证据（占位文本），但真正的像素仍被下一层丢掉。
+判断图片是否真的通了，不能看"有没有报错"，要看模型描述的内容是否只有图片里才有。
+`harness/plugin-check.cjs` 现在会断言 `prompt.image` 被声明，正是为了钉住第二层。
 
 ### 17. `sessions` 处理器硬编码返回 `[]`
 

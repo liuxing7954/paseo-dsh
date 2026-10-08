@@ -145,9 +145,16 @@ providers:
     compat:
       supportsDeveloperRole: false
 
+    # 图片能力同样不会自动发现：路由默认按 `[text]` 处理。不声明的话，
+    # 附一张图会被 DSH 换成 "「图片已省略，因为该模型只接受文本」" 的占位文本，
+    # 模型收到的是文字不是像素——**不报错**，你只看到模型说"我看不到图片"。
+    # 网关支持视觉就在这里声明一次，或者写进每个模型条目的 `input`。
+    defaultInput: [text, image]
+
     models:
       - id: your-model
         name: your-model
+        # 也可以按模型声明：input: [text, image]
         reasoningEfforts:
           off:            # 留空 = 不发参数
           low: low
@@ -158,6 +165,11 @@ providers:
 
 **`compat.supportsDeveloperRole: false` 和 `reasoningEfforts` 必须成对出现。**
 只加后者会让每个回合 422 —— 这是最容易卡住人的一个组合坑。
+
+**图片：`prompt.image` 开关 + 模型模态，两层都要开。** Paseo 插件侧必须在
+`CAPABILITIES` 里声明 `prompt.image`（否则 Paseo 直接拒绝发送带图的 prompt，附件根本到不了
+bridge）；模型侧必须在 profile 里声明图片模态（否则 DSH 把图换成占位文本）。少任何一层，
+图片都会"发不出去"或"模型看不见"，而且都不报错。
 
 如果探测下来**一个档位都不接受**，声明 `reasoningEfforts: false`，明确告诉 DSH
 这是个不支持推理的路由，而不是省略字段让 DSH 去猜。
@@ -200,6 +212,8 @@ Paseo 自己的实现就是最权威的协议文档，而且比你读类型定�
 | 症状 | 根因 | 修法 |
 |------|------|------|
 | 界面上**根本没有**插话入口 | `CAPABILITIES` 里漏了 `prompt.steer` | 声明它，并且用 `negotiateProviderCapabilities` 协商 |
+| 附图后被拒：`Provider does not support prompt.image` | `CAPABILITIES` 里漏了 `prompt.image` | 声明它；bridge 早已支持图片块，只是一直没被放行 |
+| 图片发出去了，模型却说"看不到图片" | DSH 路由没声明图片模态（默认 `[text]`），图片被换成占位文本 | profile 里加 `defaultInput: [text, image]` 或模型条目 `input: [text, image]` |
 | 界面给不支持的模型显示档位选择器 | provider 级默认值用了**所有模型档位的并集** | 改成**所有模型都支持的交集**；每模型自己的档位单独报 |
 | 选了档位又被弹回 off | 声明了但校验时不认，于是被丢弃 | 报了就必须认；丢弃等于对用户撒谎 |
 

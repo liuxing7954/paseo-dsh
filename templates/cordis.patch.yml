@@ -39,6 +39,15 @@
 #         compat:
 #           supportsDeveloperRole: false
 #
+#         # PITFALL 3: a route defaults to `[text]`, so attaching an image gets
+#         # the picture replaced by a "[image omitted because this model accepts
+#         # text only]" note — no error, the model just says it cannot see it.
+#         # Declare `defaultInput: [text, image]` once for a vision gateway, or
+#         # `input: [text, image]` on each vision model entry. Only models whose
+#         # endpoint really accepts images should be listed: a false claim is
+#         # refused by the provider mid-turn.
+#         defaultInput: [text, image]
+#
 #         models:
 #           - id: your-model
 #             name: your-model
