@@ -108,6 +108,11 @@ provider 级默认值改成**所有模型都支持的交集**而不是并集。
 **修法**：声明它并通过 `negotiateProviderCapabilities` 协商；`delivery: "steer"` 走
 `agent.steer()`（注入当前回合），而不是 `followup()`（排在下一个回合）。
 
+> 同一类错误后来又犯了两次：漏声明 `prompt.image` 让图片根本发不出去（见第 16 条），
+> 漏声明 `prompt.command` 让 `/` 菜单一个命令、一个技能都不显示。**能力位是开关，
+> 不是"锦上添花"**——漏了它功能整个消失，且不报任何错。声明完还要真的把数据补上：
+> 命令目录走 `session.commands` 事件，缺了它菜单照样是空的。
+
 ### 11. 终止后对话就废了
 
 **症状**：终止一次之后，再发消息就"续不上"了。
@@ -224,7 +229,6 @@ store），只有最上层把它们映射成空字符串并传了 `undefined`—
 | 项 | 说明 |
 |----|------|
 | `assistant/attempt` 被丢弃 | 该事件承载失败/重试/取消的尝试，所以**重试在界面上不可见**。但 `AssistantStreamRecord` 没有错误变体，无法可靠区分"失败重试"和"用户主动取消"，乱加会在每次取消时刷噪音。 |
-| `prompt.command` 分支把斜杠命令当纯文本发 | 能力未声明所以暂不可达；一旦启用 `prompt.command` 会静默走错路。 |
 | 时间线只映射 13 种会话事件里的 4 种 | 其余多数是有意丢弃：`developer/message`、`system/message` 是系统提示，`request/header`、`request/context` 是内部记账。 |
 
 ## 关于"哪条路由能用"

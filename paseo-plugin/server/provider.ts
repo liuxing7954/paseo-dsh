@@ -29,6 +29,10 @@ const CAPABILITIES = [
   // an un-declared `prompt.steer`). The bridge already admits image blocks into
   // DSH's attachment store; declaring the capability is what makes Paseo use it.
   "prompt.image",
+  // The `/` menu is capability-gated too: without `prompt.command` Paseo never
+  // asks for DSH's commands, so its registered commands and user-invocable
+  // skills are invisible.
+  "prompt.command",
   "prompt.steer",
   "session.configure",
   "permission",
@@ -264,6 +268,16 @@ class DshConnection implements ProviderConnection {
 
     if (config.thinkingOption !== undefined) {
       await session.configure({ thinkingOption: config.thinkingOption });
+    }
+
+    // Advertise the `/` menu before `session.ready` so the composer has it the
+    // moment the session is usable. A command catalog is an enhancement, never a
+    // precondition: a discovery failure logs and leaves the menu empty rather
+    // than failing the whole open.
+    try {
+      await session.loadCommands();
+    } catch (error) {
+      process.stderr.write(`[${PROVIDER_ID}] command catalog failed: ${messageOf(error)}\n`);
     }
 
     this.#emit({

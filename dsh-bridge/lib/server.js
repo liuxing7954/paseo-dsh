@@ -285,6 +285,73 @@ export class PaseoHarnessServer {
     return { ...next, reasoningEffort: next.reasoningEffort ?? null };
   }
 
+  /**
+   * The slash-commands the composer may offer for one session: the registered
+   * human commands plus every user-invocable skill.
+   *
+   * Skills ship a `userInvocable` policy precisely so a human-facing catalog can
+   * advertise them next to commands, and DSH injects a skill from a bare
+   * `/name` token in user input. They are not registered commands, so the two
+   * are tagged and handled differently when run.
+   */
+  async commands(params) {
+    const rec = await this.getOrCreateSession(params.sessionId);
+    this.assertLiveAgent(rec, params.sessionId);
+    const agent = rec.handle.agent;
+    const out = [];
+    const seen = new Set();
+    const commands = this.ctx.get('commands');
+    if (commands !== undefined) {
+      for (const command of commands.list(agent)) {
+        if (seen.has(command.name)) continue;
+        seen.add(command.name);
+        out.push({
+          name: command.name,
+          description: command.description,
+          ...(command.input?.hint === undefined ? {} : { argumentHint: command.input.hint }),
+          kind: 'command',
+        });
+      }
+    }
+    const skills = this.ctx.get('skills');
+    if (skills !== undefined) {
+      let list;
+      try {
+        list = await skills.list({ cwd: this.cwd, scope: agent });
+      } catch {
+        // A skill source that fails discovery must not take commands down with it.
+        list = [];
+      }
+      for (const skill of list) {
+        if (skill.invocation?.userInvocable !== true) continue;
+        if (seen.has(skill.name)) continue;
+        seen.add(skill.name);
+        out.push({ name: skill.name, description: skill.description, kind: 'skill' });
+      }
+    }
+    return { commands: out };
+  }
+
+  /**
+   * Run one registered command for a session. A skill is not handled here: the
+   * plugin sends its `/name` line as ordinary user input, which is how DSH's own
+   * `skill` tool injects it.
+   */
+  async runCommand(params) {
+    const rec = this.requireSession(params.sessionId);
+    const commands = this.ctx.get('commands');
+    if (commands === undefined) throw new Error('command registry is not mounted in this profile');
+    const line = typeof params.arguments === 'string' && params.arguments.trim() !== ''
+      ? `/${params.name} ${params.arguments}`
+      : `/${params.name}`;
+    const execution = await commands.execute(rec.handle.agent, line, [], new AbortController().signal);
+    if (execution === undefined) throw new Error(`unknown command "${params.name}"`);
+    return {
+      kind: execution.result.kind,
+      ...(execution.result.text === undefined ? {} : { text: execution.result.text }),
+    };
+  }
+
   /** Report the routes and models the runtime can serve, for the Paseo catalog. */
   async catalog() {
     const llm = this.ctx.get('llm');
@@ -403,6 +470,10 @@ export class PaseoHarnessServer {
         return this.cancel(params);
       case 'paseo/catalog':
         return this.catalog();
+      case 'paseo/commands':
+        return this.commands(params);
+      case 'paseo/command/run':
+        return this.runCommand(params);
       case 'paseo/plan/get':
         return this.planGet(params);
       case 'paseo/plan/set':

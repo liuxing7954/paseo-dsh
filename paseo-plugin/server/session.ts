@@ -75,6 +75,8 @@ export class DshSession {
   #thinkingOption: string | undefined;
   #turnId: string | null = null;
   #pendingPermissions = new Map<string, (response: ProviderPermissionResponse) => void>();
+  /** Slash-menu entries by name, tagging why each exists. */
+  #commandKinds = new Map<string, "command" | "skill">();
   #closed = false;
 
   constructor(options: DshSessionOptions) {
@@ -148,49 +150,115 @@ export class DshSession {
     return this.#thinking().map((option) => option.id);
   }
 
+  /**
+   * Publish the session's `/` menu: DSH's registered human commands plus every
+   * user-invocable skill.
+   *
+   * Both appear in the composer's slash menu, but they run differently, so the
+   * kind is remembered for {@link prompt}: a command executes in the runtime, a
+   * skill rides a `/name` user message.
+   */
+  async loadCommands(): Promise<void> {
+    const commands = await this.#require().commands();
+    this.#commandKinds.clear();
+    for (const command of commands) this.#commandKinds.set(command.name, command.kind);
+    this.#options.emit({
+      type: "session.commands",
+      sessionId: this.id,
+      commands: commands.map((command) => ({
+        name: command.name,
+        description: command.description,
+        ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
+      })),
+    });
+  }
+
   /** Accept one prompt and start its turn. */
   async prompt(prompt: ProviderPrompt): Promise<void> {
     const process = this.#require();
+
+    // A slash-menu pick arrives as a command, not a message. DSH commands and
+    // skills share the menu but not the execution path, so branch on the kind
+    // the catalog recorded rather than on the name.
+    if (prompt.input.type === "command") {
+      const args = prompt.input.arguments ?? "";
+      const line = args.trim() === "" ? `/${prompt.input.name}` : `/${prompt.input.name} ${args}`;
+      this.#emitUserMessage(prompt.clientMessageId, line);
+
+      if (this.#commandKinds.get(prompt.input.name) === "command") {
+        try {
+          const result = await process.runCommand(prompt.input.name, args);
+          if (result.kind === "error") throw new Error(result.text ?? `/${prompt.input.name} failed`);
+        } catch (error) {
+          this.#emitPromptFailed(prompt.clientMessageId, error);
+          return;
+        }
+        // A command answers with its own timeline items rather than a turn.
+        this.#options.emit({
+          type: "session.prompt_result",
+          sessionId: this.id,
+          clientMessageId: prompt.clientMessageId,
+          result: { type: "completed" },
+        });
+        return;
+      }
+
+      // A skill (or an unrecognized name): hand DSH the bare `/name` line. Its
+      // skill tool injects a user-invocable skill from exactly that token.
+      try {
+        await process.prompt(line, [{ type: "text", text: line }], prompt.delivery);
+      } catch (error) {
+        this.#emitPromptFailed(prompt.clientMessageId, error);
+        return;
+      }
+      this.#emitPromptAccepted(prompt.clientMessageId);
+      return;
+    }
+
     // Paseo and the bridge already agree on the text/image block shape, so the
     // blocks ride through untouched. They used to be collapsed to a text label,
     // which silently discarded every non-text attachment.
-    const blocks = prompt.input.type === "message" ? prompt.input.content.map(toDshContent) : [];
-    const label =
-      prompt.input.type === "message"
-        ? blocks
-            .map((block) => (block.type === "text" ? (block.text as string) : ""))
-            .filter((text) => text !== "")
-            .join("\n")
-        : `/${prompt.input.name} ${prompt.input.arguments}`.trim();
+    const blocks = prompt.input.content.map(toDshContent);
+    const label = blocks
+      .map((block) => (block.type === "text" ? (block.text as string) : ""))
+      .filter((text) => text !== "")
+      .join("\n");
 
-    this.#options.emit({
-      type: "timeline.item",
-      sessionId: this.id,
-      item: {
-        type: "user_message",
-        id: `user:${prompt.clientMessageId}`,
-        text: label,
-        clientMessageId: prompt.clientMessageId,
-      },
-    });
+    this.#emitUserMessage(prompt.clientMessageId, label);
 
     try {
       await process.prompt(label, blocks.length === 0 ? undefined : blocks, prompt.delivery);
     } catch (error) {
-      this.#options.emit({
-        type: "session.prompt_result",
-        sessionId: this.id,
-        clientMessageId: prompt.clientMessageId,
-        result: { type: "failed", error: { message: messageOf(error) } },
-      });
+      this.#emitPromptFailed(prompt.clientMessageId, error);
       return;
     }
 
-    const turnId = this.#turnId ?? `turn:${prompt.clientMessageId}`;
+    this.#emitPromptAccepted(prompt.clientMessageId);
+  }
+
+  #emitUserMessage(clientMessageId: string, text: string): void {
+    this.#options.emit({
+      type: "timeline.item",
+      sessionId: this.id,
+      item: { type: "user_message", id: `user:${clientMessageId}`, text, clientMessageId },
+    });
+  }
+
+  #emitPromptFailed(clientMessageId: string, error: unknown): void {
     this.#options.emit({
       type: "session.prompt_result",
       sessionId: this.id,
-      clientMessageId: prompt.clientMessageId,
+      clientMessageId,
+      result: { type: "failed", error: { message: messageOf(error) } },
+    });
+  }
+
+  #emitPromptAccepted(clientMessageId: string): void {
+    const turnId = this.#turnId ?? `turn:${clientMessageId}`;
+    this.#options.emit({
+      type: "session.prompt_result",
+      sessionId: this.id,
+      clientMessageId,
       result: { type: "turn", turnId },
     });
   }

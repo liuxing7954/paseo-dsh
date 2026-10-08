@@ -214,6 +214,8 @@ Paseo 自己的实现就是最权威的协议文档，而且比你读类型定�
 | 界面上**根本没有**插话入口 | `CAPABILITIES` 里漏了 `prompt.steer` | 声明它，并且用 `negotiateProviderCapabilities` 协商 |
 | 附图后被拒：`Provider does not support prompt.image` | `CAPABILITIES` 里漏了 `prompt.image` | 声明它；bridge 早已支持图片块，只是一直没被放行 |
 | 图片发出去了，模型却说"看不到图片" | DSH 路由没声明图片模态（默认 `[text]`），图片被换成占位文本 | profile 里加 `defaultInput: [text, image]` 或模型条目 `input: [text, image]` |
+| 输入 `/` 一个命令都没有 | `CAPABILITIES` 里漏了 `prompt.command`，也从未发 `session.commands` | 声明 `prompt.command`；会话打开后把命令目录作为 `session.commands` 发出 |
+| 选了命令却被当纯文本发给模型 | 命令和技能共用 `/` 菜单，但**执行路径不同** | DSH 命令走 `ctx.commands.execute`；技能发 `/name` 用户消息，由 DSH 注入 |
 | 界面给不支持的模型显示档位选择器 | provider 级默认值用了**所有模型档位的并集** | 改成**所有模型都支持的交集**；每模型自己的档位单独报 |
 | 选了档位又被弹回 off | 声明了但校验时不认，于是被丢弃 | 报了就必须认；丢弃等于对用户撒谎 |
 

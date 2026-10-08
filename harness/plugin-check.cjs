@@ -65,6 +65,7 @@ const check = (name, pass, detail) => {
     capabilities: [
       "prompt.message",
       "prompt.image",
+      "prompt.command",
       "prompt.steer",
       "session.configure",
       "permission",
@@ -77,6 +78,11 @@ const check = (name, pass, detail) => {
     Array.isArray(conn.capabilities) && conn.capabilities.includes("prompt.image"),
     `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
   );
+  check(
+    "provider declares prompt.command",
+    Array.isArray(conn.capabilities) && conn.capabilities.includes("prompt.command"),
+    `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
+  );
 
   await conn.send({
     type: "session.open",
@@ -86,6 +92,39 @@ const check = (name, pass, detail) => {
   const ready = await until((e) => e.type === "session.ready", "session.ready");
   const sessionId = ready.sessionId;
   console.log(`  session ready: ${sessionId}\n`);
+
+  // 0. the slash menu: DSH's registered commands and user-invocable skills.
+  const commandEvent = await until((e) => e.type === "session.commands", "session.commands");
+  const advertised = Array.isArray(commandEvent.commands) ? commandEvent.commands : [];
+  check(
+    "→ slash menu advertised",
+    advertised.length > 0,
+    advertised.length > 0
+      ? `${advertised.length} entries, e.g. ${advertised.slice(0, 5).map((c) => `/${c.name}`).join(", ")}`
+      : "(empty command list)",
+  );
+
+  // 0b. a registered command executes in the runtime instead of being sent to the
+  // model as literal text. `/goal` with no argument only reads state, so it is
+  // safe to run here and must settle as `completed`, not `failed`.
+  const commandMsgId = `cmd-${Date.now()}`;
+  await conn.send({
+    type: "session.prompt",
+    sessionId,
+    prompt: {
+      clientMessageId: commandMsgId,
+      input: { type: "command", name: "goal", arguments: "" },
+    },
+  });
+  const commandResult = await until(
+    (e) => e.type === "session.prompt_result" && e.clientMessageId === commandMsgId,
+    "command prompt_result",
+  );
+  check(
+    "registered command runs in the runtime (no model turn)",
+    commandResult.result?.type === "completed",
+    JSON.stringify(commandResult.result),
+  );
 
   // A 1x1 PNG: tiny, valid, and unmistakably an image to anything downstream.
   const png =

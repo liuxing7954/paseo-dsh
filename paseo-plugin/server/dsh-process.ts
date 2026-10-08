@@ -68,6 +68,18 @@ export interface DshCatalog {
   planMode?: boolean;
 }
 
+/**
+ * One entry of the composer's `/` menu. `kind` decides how running it works:
+ * a registered `command` executes in the runtime, a `skill` rides a `/name`
+ * user message that DSH's skill tool turns into an injected instruction set.
+ */
+export interface DshCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  kind: "command" | "skill";
+}
+
 export interface DshProcessHandlers {
   onEvent(payload: DshSessionEvent): void;
   onStatus(status: string): void;
@@ -178,6 +190,25 @@ export class DshProcess {
   /** Read the runtime's provider/model catalog without creating an agent. */
   async catalog(): Promise<DshCatalog> {
     return (await this.#request("paseo/catalog", {}, 60000)) as DshCatalog;
+  }
+
+  /** List the session's registered commands and user-invocable skills. */
+  async commands(): Promise<DshCommand[]> {
+    const result = (await this.#request(
+      "paseo/commands",
+      { sessionId: this.#options.sessionId },
+      60000,
+    )) as { commands?: DshCommand[] };
+    return result.commands ?? [];
+  }
+
+  /** Execute one registered slash command (skills are sent as text instead). */
+  async runCommand(name: string, args: string): Promise<{ kind: "success" | "error"; text?: string }> {
+    return (await this.#request("paseo/command/run", {
+      sessionId: this.#options.sessionId,
+      name,
+      arguments: args,
+    })) as { kind: "success" | "error"; text?: string };
   }
 
   /** Send one text prompt. Resolves when the bridge accepts it, not when the turn ends. */
