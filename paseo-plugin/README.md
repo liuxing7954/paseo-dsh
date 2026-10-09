@@ -16,6 +16,14 @@ including the stdio bridge bundle it carries — no shell script, no manual
 profile setup. The only thing left is your model route in
 `~/.dsh/profiles/paseo/cordis.patch.yml`.
 
+This package also ships a small CLI for that setup:
+
+```bash
+npx paseo-dsh doctor   # check CLIs, profile, bridge, model route and credentials
+npx paseo-dsh probe --base-url https://your-gateway/v1 \
+  --api-key-env YOUR_KEY_ENV --model your-model-id   # discover reasoning levels etc.
+```
+
 What you get that the ACP boundary can't carry:
 
 - `ask_user_question` → real Paseo question cards

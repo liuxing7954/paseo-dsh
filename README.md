@@ -32,11 +32,10 @@ DSH 侧是一个 profile bundle。
 你是一个部署助手，帮我把这台机器上的 Paseo 接上 DeepSeek Harness（DSH）。
 
 仓库：https://github.com/liuxing7954/paseo-dsh
-克隆到本地，然后【完整读一遍 docs/ADOPTION.md】再动手。不要凭猜测改任何文件。
+先完整读一遍 docs/ADOPTION.md 再动手。不要凭猜测改任何文件。
 
 ■ 第一步：检查前提
 确认 dsh、paseo、node 都在 PATH 上，且 paseo 版本 >= 0.9.2。
-跑 ./install.sh --check 看它怎么说。
 缺任何一样就停下来告诉我，不要替我安装它们。
 
 ■ 第二步：确定用哪个模型
@@ -51,7 +50,7 @@ DSH 侧是一个 profile bundle。
 不要把 key 写进任何会被提交的文件，也不要在终端回显它。
 
 ■ 第三步：探测模型能力（关键，不许跳过）
-  node tools/probe-provider.mjs --base-url <端点> --api-key-env <变量名> --model <模型id>
+  npx paseo-dsh probe --base-url <端点> --api-key-env <变量名> --model <模型id>
 它输出的 YAML 片段【原样采用】。它会顺便告诉你两个必须处理的坑：
   - 如果 developer 角色被拒 -> 配置里必须有 compat.supportsDeveloperRole: false
   - reasoningEfforts 里的 off 必须留空（不写值）
@@ -71,10 +70,9 @@ DSH 侧是一个 profile bundle。
 如果那个文件里已经有内容，只做补充，不要覆盖。
 
 ■ 第六步：验证（不许跳）
-  node harness/catalog.mjs
-确认输出里有我的模型，且每个模型的 efforts 列表和探测结果一致。
-  node harness/probe.mjs
-确认提问往返成功，且没有失败事件。
+  npx paseo-dsh doctor
+确认全绿（dsh/paseo 版本、profile、bridge、路由、key）。有问题就修，修完再跑一次。
+然后重启 Paseo daemon。
 
 ■ 第七步：汇报
 告诉我：
@@ -146,14 +144,22 @@ refs:
   MY_GATEWAY_API_KEY: sk-xxxxxxxx
 ```
 
-然后**重启 Paseo daemon**，在 Paseo 里新建会话时选 **DeepSeek Harness (native)** 这个 provider。
+### c) 自检 + 重启
 
-> **不确定端点支不支持推理 / thinking 档位 / vision？** 克隆仓库跑探测工具，它会直接打你的
-> 端点、把上面 a) 那段填好吐给你：
+```bash
+npx paseo-dsh doctor
+```
+
+它会检查 `dsh`/`paseo` 版本、profile 是否就绪、bridge 是否落地、路由是否填好、
+`apiKeyEnv` 对应的 key 是否存在——缺什么直接告诉你（只读，不改任何东西）。全绿后
+**重启 Paseo daemon**（`paseo daemon restart`），在 Paseo 里新建会话时选
+**DeepSeek Harness (native)** 这个 provider。
+
+> **不确定端点支不支持推理 / thinking 档位 / vision？** 用同一个 CLI 探测你的端点，
+> 它会直接打过去、把上面 a) 那段填好吐给你（同样不需要 clone）：
 >
 > ```bash
-> git clone https://github.com/liuxing7954/paseo-dsh && cd paseo-dsh
-> node tools/probe-provider.mjs \
+> npx paseo-dsh probe \
 >   --base-url https://your-gateway/v1 \
 >   --api-key-env MY_GATEWAY_API_KEY \
 >   --model your-model-id
