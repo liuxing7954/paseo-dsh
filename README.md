@@ -6,6 +6,10 @@ DSH 侧是一个 profile bundle。
 
 > 这不是 ACP 接入。ACP 缺三样东西，而 Paseo 的原生 provider 协议恰好都有。
 
+**一行安装：** `paseo plugin add npm:paseo-dsh` · npm 包
+[npmjs.com/package/paseo-dsh](https://www.npmjs.com/package/paseo-dsh) · 装完只差
+[填模型路由](#安装推荐一行)，详见下方。
+
 | 能力 | ACP 接入 | 本项目 |
 | --- | --- | --- |
 | `ask_user_question` 提问卡片 | ❌ 模型看不到该工具，也没有应答方 | ✅ Paseo 原生卡片，步进式选项，一次提交 |
@@ -83,33 +87,86 @@ DSH 侧是一个 profile bundle。
 
 ## 安装（推荐，一行）
 
-用 Paseo 自己的插件安装器，装完重启 daemon：
+用 Paseo 自己的插件安装器：
 
 ```bash
 paseo plugin add npm:paseo-dsh
-# 或者直接从仓库装：
-paseo plugin add liuxing7954/paseo-dsh --path paseo-plugin
+paseo plugin ls          # 确认 dsh-paseo 已装
 ```
 
-插件**首次加载会自己准备好 DSH profile**（`~/.dsh/profiles/paseo`）和它内嵌的
-stdio bridge——不需要 clone、不需要跑任何脚本。之后**更新也只用 Paseo 的这一条链路**：
-`paseo plugin update`（npm）或 `git pull`（目录/仓库源）+ 重启 daemon，profile 会随
-插件版本一起更新。
+插件**首次加载会自己准备好 DSH profile**（`~/.dsh/profiles/paseo`）和内嵌的 stdio
+bridge——不用 clone、不用跑脚本。更新同样只走 Paseo 这一条链路：npm 源用
+`paseo plugin update`，Git 源用 `git pull`，然后重启 daemon，profile 会随插件一起更新。
 
-装完之后**只有一件事需要你填**：profile 里的模型路由。不确定你的端点支持什么，
-先探测：
+装完之后还差**一步：填模型路由**（这一步因人而异，没法自动）。分两小步：
 
-```bash
-node tools/probe-provider.mjs \
-  --base-url https://your-gateway/v1 \
-  --api-key-env YOUR_KEY_ENV_VAR \
-  --model your-model-id
+### a) 告诉 DSH 去哪个端点、用哪些模型
+
+编辑 `~/.dsh/profiles/paseo/cordis.patch.yml`。插件已生成一份带注释的模板，
+**文件已存在时绝不覆盖**。一个完整例子（把 `my-gateway` / 端点 / 模型 id 换成你自己的）：
+
+```yaml
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      my-gateway:                       # 路由名，随便取，下面要一致
+        displayName: My Gateway
+        apiKeyEnv: MY_GATEWAY_API_KEY   # 指向 .credentials.yaml 里的键名（见 b）
+        api: openai-completions
+        baseURL: https://your-gateway/v1
+        # 网关只认 system 角色、拒绝 developer 角色时必须加，否则每个回合 422
+        compat:
+          supportsDeveloperRole: false
+        # 网关支持视觉才写；不写默认 [text]，图片会被换成占位文本
+        defaultInput: [text, image]
+        models:
+          - id: your-model-id           # 端点上的模型 id
+            name: your-model-id
+            reasoningEfforts:           # 支持推理才写；不支持写 false
+              off:                      # 留空 = 不发参数（多数网关拒绝字面量 "off"）
+              low: low
+              medium: medium
+              high: high
+              max: max                  # max/xhigh 必须显式列出，缺键=不支持
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: my-gateway
+    model: your-model-id
 ```
 
-它会直接打你的端点，告诉你该不该开 `supportsDeveloperRole: false`、哪些推理档位
-真的可用，并吐出一段可直接粘贴的配置。
+### b) 放 API key
+
+写进 `~/.dsh/.credentials.yaml`（**不要**写进任何会被提交的文件）：
+
+```yaml
+version: 1
+refs:
+  MY_GATEWAY_API_KEY: sk-xxxxxxxx
+```
+
+然后**重启 Paseo daemon**，在 Paseo 里新建会话时选 **DeepSeek Harness (native)** 这个 provider。
+
+> **不确定端点支不支持推理 / thinking 档位 / vision？** 克隆仓库跑探测工具，它会直接打你的
+> 端点、把上面 a) 那段填好吐给你：
+>
+> ```bash
+> git clone https://github.com/liuxing7954/paseo-dsh && cd paseo-dsh
+> node tools/probe-provider.mjs \
+>   --base-url https://your-gateway/v1 \
+>   --api-key-env MY_GATEWAY_API_KEY \
+>   --model your-model-id
+> ```
+>
+> 两个最容易卡住的点它会替你确认：网关拒绝 `developer` 角色 → 要加
+> `compat.supportsDeveloperRole: false`；`off` 档位必须留空。
 
 **完整走查与踩坑清单见 [docs/ADOPTION.md](docs/ADOPTION.md)。**
+
+相关地址：npm 包 <https://www.npmjs.com/package/paseo-dsh> · Paseo 社区目录
+<https://paseo.cafe/plugins/dsh-paseo> · 讨论帖
+<https://github.com/getpaseo/paseo/discussions/6375>
 
 ## 本地开发 / 离线安装
 
