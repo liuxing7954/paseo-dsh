@@ -77,6 +77,9 @@ export class DshSession {
   #pendingPermissions = new Map<string, (response: ProviderPermissionResponse) => void>();
   /** Slash-menu entries by name, tagging why each exists. */
   #commandKinds = new Map<string, "command" | "skill">();
+  /** Current DSH permission preset name, and the ones it can switch to. */
+  #permission: string | null = null;
+  #permissionPresets: string[] = [];
   #closed = false;
 
   constructor(options: DshSessionOptions) {
@@ -119,6 +122,18 @@ export class DshSession {
   /** The committed configuration Paseo renders in the composer. */
   configState(): ProviderConfigState {
     const settings: ProviderSetting[] = [];
+    // Surface DSH's permission presets as a composer control, so switching
+    // between sandboxed and full access doesn't require typing /permission.
+    if (this.#permissionPresets.length > 0) {
+      settings.push({
+        type: "select",
+        id: "permission",
+        label: "Permissions",
+        description: "DSH sandbox + approval preset for this session.",
+        value: this.#permission,
+        options: this.#permissionPresets.map((name) => ({ label: name, value: name })),
+      });
+    }
     const thinkingOptions = this.#thinking();
     return {
       model: `${this.#route.provider}/${this.#route.model}`,
@@ -171,6 +186,14 @@ export class DshSession {
         ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
       })),
     });
+  }
+
+  /** Read the current permission preset and the switchable ones, for the composer. */
+  async loadPermission(): Promise<void> {
+    const permission = await this.#require().permission();
+    if (!permission.available) return;
+    this.#permission = permission.current;
+    this.#permissionPresets = permission.presets;
   }
 
   /** Accept one prompt and start its turn. */
@@ -306,6 +329,21 @@ export class DshSession {
     if (changes.mode !== undefined && changes.mode !== null) {
       this.#mode = changes.mode === "plan" ? "plan" : "build";
       await process.setPlan(this.#mode === "plan");
+    }
+
+    const requestedPermission = changes.settings?.["permission"];
+    if (
+      typeof requestedPermission === "string" &&
+      requestedPermission !== "" &&
+      requestedPermission !== this.#permission
+    ) {
+      // Switch the DSH permission preset through its own `/permission` command,
+      // which owns both the sandbox mode and the approval policy.
+      const result = await process.runCommand("permission", requestedPermission);
+      if (result.kind === "error") {
+        throw new Error(result.text ?? `could not set permission preset "${requestedPermission}"`);
+      }
+      this.#permission = requestedPermission;
     }
   }
 

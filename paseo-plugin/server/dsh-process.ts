@@ -211,6 +211,13 @@ export class DshProcess {
     })) as { kind: "success" | "error"; text?: string };
   }
 
+  /** Read the session's current permission preset and the switchable ones. */
+  async permission(): Promise<{ available: boolean; current: string | null; presets: string[] }> {
+    return (await this.#request("paseo/permission", {
+      sessionId: this.#options.sessionId,
+    })) as { available: boolean; current: string | null; presets: string[] };
+  }
+
   /** Send one text prompt. Resolves when the bridge accepts it, not when the turn ends. */
   async prompt(
     text: string,

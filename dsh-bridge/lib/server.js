@@ -352,6 +352,19 @@ export class PaseoHarnessServer {
     };
   }
 
+  /** Report the session's permission preset and the switchable ones. */
+  async permission(params) {
+    const service = this.ctx.get('permissionPresets');
+    if (service === undefined) return { available: false, current: null, presets: [] };
+    const rec = await this.getOrCreateSession(params.sessionId);
+    this.assertLiveAgent(rec, params.sessionId);
+    return {
+      available: true,
+      current: service.current(rec.handle.agent.session),
+      presets: [...service.names],
+    };
+  }
+
   /** Report the routes and models the runtime can serve, for the Paseo catalog. */
   async catalog() {
     const llm = this.ctx.get('llm');
@@ -474,6 +487,8 @@ export class PaseoHarnessServer {
         return this.commands(params);
       case 'paseo/command/run':
         return this.runCommand(params);
+      case 'paseo/permission':
+        return this.permission(params);
       case 'paseo/plan/get':
         return this.planGet(params);
       case 'paseo/plan/set':

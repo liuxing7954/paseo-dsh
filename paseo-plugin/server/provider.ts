@@ -276,6 +276,7 @@ class DshConnection implements ProviderConnection {
     // than failing the whole open.
     try {
       await session.loadCommands();
+      await session.loadPermission();
     } catch (error) {
       process.stderr.write(`[${PROVIDER_ID}] command catalog failed: ${messageOf(error)}\n`);
     }

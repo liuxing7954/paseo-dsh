@@ -18,6 +18,7 @@ DSH 侧是一个 profile bundle。
 | 插话（steer） | — | ✅ 注入当前回合，而不是排到下一个 |
 | 图片（多模态） | ⚠️ 多数不承载 | ✅ 附件入库后按路由模态投递（需在 profile 声明图片模态） |
 | 斜杠命令 / 技能 | ⚠️ 多为命令子集 | ✅ `/` 菜单列出 DSH 命令与 user-invocable 技能；命令在运行时执行，技能按 `/name` 注入 |
+| 权限模式（沙箱） | ❌ 无统一开关 | ✅ composer 里的 **Permissions** 下拉，切换 DSH 的沙箱 + 审批预设 |
 | 终止后续聊 | — | ✅ 只取消当前回合，会话保留 |
 
 ## 🤖 复制这段给你的 AI Agent（推荐）
@@ -275,6 +276,30 @@ rm -rf ../.dbg
 - Paseo ≥ 0.9.2（需要 direct provider 插件 API）
 - DSH 已安装且 `dsh` 在 PATH 上
 - Node ≥ 18（探测工具用了内建 `fetch`）
+
+## 权限模式（放开沙箱）
+
+DSH 默认是 **`workspace-write`**：只能改会话工作目录内的文件，越界操作要审批。会话建好后，
+Paseo composer 里有一个 **Permissions** 下拉，可随时切换预设（等价于 `/permission <preset>`）：
+
+- `read-only` —— 只读，任何改动都问
+- `workspace-write` —— 可改工作区（默认）
+- `danger-full-access` —— 不限目录、不审批（**完全放权**，谨慎）
+
+想让**所有新会话默认就完全访问**，在你的 profile `~/.dsh/profiles/paseo/cordis.patch.yml`
+里加这两段（与模型路由并存）：
+
+```yaml
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
+- id: approval
+  config:
+    policy: never
+```
+
+改回默认就把 `mode` 设回 `workspace-write`、`policy` 设回 `ask`。改完重启 daemon。
 
 ## 版本策略
 

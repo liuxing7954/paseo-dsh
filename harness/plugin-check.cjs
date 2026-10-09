@@ -104,7 +104,34 @@ const check = (name, pass, detail) => {
       : "(empty command list)",
   );
 
-  // 0b. a registered command executes in the runtime instead of being sent to the
+  // 0b. the permission setting is advertised and switching it moves the DSH preset.
+  const permissionSetting = events
+    .filter((e) => e.type === "session.config")
+    .flatMap((e) => e.config?.settings ?? [])
+    .find((s) => s.id === "permission");
+  check(
+    "→ permission setting advertised",
+    permissionSetting !== undefined &&
+      (permissionSetting.options ?? []).some((o) => o.value === "danger-full-access"),
+    permissionSetting
+      ? `options=[${(permissionSetting.options ?? []).map((o) => o.value).join(", ")}]`
+      : "(no permission setting)",
+  );
+  await conn.send({
+    type: "session.configure",
+    sessionId,
+    requestId: "cfg-permission",
+    changes: { settings: { permission: "danger-full-access" } },
+  });
+  const permissionApplied = await until(
+    (e) =>
+      e.type === "session.config" &&
+      (e.config?.settings ?? []).some((s) => s.id === "permission" && s.value === "danger-full-access"),
+    "permission applied",
+  );
+  check("permission setting switches the preset", permissionApplied !== undefined, "value=danger-full-access");
+
+  // 0c. a registered command executes in the runtime instead of being sent to the
   // model as literal text. `/goal` with no argument only reads state, so it is
   // safe to run here and must settle as `completed`, not `failed`.
   const commandMsgId = `cmd-${Date.now()}`;
