@@ -343,7 +343,7 @@ patch 位是插件自己的发布计数。装的时候挑与 daemon 上 `dsh` �
 ## 相关文档
 
 - [docs/ADOPTION.md](docs/ADOPTION.md) — 改造指南：改动点、配置方法、踩坑清单
-- [docs/FIELD-NOTES.md](docs/FIELD-NOTES.md) — 18 个真实缺陷的症状 → 根因 → 修法
+- [docs/FIELD-NOTES.md](docs/FIELD-NOTES.md) — 19 个真实缺陷的症状 → 根因 → 修法
 - [AGENTS.md](AGENTS.md) — 给 AI Agent 的说明（Codex 等会自动读取）。不管你是被叫来
   装它、还是被叫来改它，先看这个
 

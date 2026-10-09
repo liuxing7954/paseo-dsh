@@ -35,6 +35,12 @@ const CAPABILITIES = [
   "prompt.command",
   "prompt.steer",
   "session.configure",
+  // Without a persistence handle Paseo falls back to a raw session id that its
+  // own decoder rejects on reopen, so a session orphaned by a plugin reload or
+  // daemon restart can never be resumed ("Invalid plugin provider persistence
+  // handle"). Declaring the capability and emitting a handle in `session.opened`
+  // lets Paseo reopen the session, which DSH then resumes by id.
+  "session.persistence",
   "permission",
 ] as const;
 
@@ -315,6 +321,10 @@ class DshConnection implements ProviderConnection {
       capabilities: [...this.capabilities],
       restoration: "core",
       cwd: config.cwd,
+      // Reopen key: DSH persists the session under this exact id, so a plugin
+      // reload or daemon restart can resume it. `data` is provider-owned and
+      // carried back on `session.open`; the session id alone is enough for DSH.
+      persistence: { version: 1, data: { sessionId } },
       ...(config.title === undefined ? {} : { title: config.title }),
     });
     this.#emit({ type: "session.config", sessionId, config: session.configState() });

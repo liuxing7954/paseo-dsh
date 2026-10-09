@@ -6,7 +6,8 @@
 它比 [ADOPTION.md](./ADOPTION.md) 更啰嗦——ADOPTION 把教训按主题归纳，这里保留
 时间顺序和当时的错误判断。**如果你正在接自己的运行时，这份清单可以当检查表用。**
 
-前 11 条来自界面反馈驱动的迭代，最后 4 条来自一次针对"未完成实现"的专项审计。
+前 11 条来自界面反馈驱动的迭代，接下来 4 条来自一次针对"未完成实现"的专项审计，
+最后 1 条来自"重载一个正在运行的会话"这条平时不会走的路径。
 
 ---
 
@@ -222,6 +223,31 @@ store），只有最上层把它们映射成空字符串并传了 `undefined`—
 
 > **教训**：`default:` 分支里"当作成功处理"是静默降级的经典形态。
 > 它和第 11 条的 `kill()` 属于同一类错误——**看起来能用，实际在骗人**。
+
+---
+
+## 第五轮：重载后会话不可恢复
+
+### 19. 插件重载 / daemon 重启后，正在跑的会话挂掉且无法恢复
+
+**症状**：改了插件或重启 daemon 之后，原本在跑的 agent 报
+`[System Error] Provider connection closed`；继续对话则报
+`Invalid plugin provider persistence handle`，再也接不上。
+
+根因有**两层**，缺一层都修不好：
+
+| 层 | 症状 | 根因 | 修法 |
+|----|------|------|------|
+| Paseo ↔ 插件 | 重开时报 `Invalid plugin provider persistence handle` | 插件从没在 `session.opened` 里给 `persistence`，Paseo 的 `describePersistence()` 返回 null，退化成 `{provider, sessionId:<裸id>}`；重开时它自己的 `decodePersistenceId` 要求 `sessionId` 以 `plugin:` 开头，于是解码失败 | 声明 `session.persistence` 能力，并在 `session.opened` 里带 `persistence: {version, data}` |
+| 插件内部（bridge） | 即便拿到合法 handle，resume 也会抛 `cannot get property "sessions" without inject` | resume 分支里用了 `this.ctx.sessions`——cordis 里**没 inject 的服务必须用 `ctx.get()` 访问**，直接取属性会抛 | 改成 `this.ctx.get('sessions')` / `this.ctx.get('sessionProjections')` |
+
+**判定标准**：DSH 会持久化会话（jsonl），所以只要能重开、且 `sessionId` 一致，
+`ctx.agents.resume` 就能把历史接回来。可以这样自测：起一个 dsh→让它记住一个词→杀掉
+进程→再起一个→用同一个 `sessionId` 问它那个词。答得出，说明恢复链路是通的。
+
+> **教训**：`Provider connection closed` 只是"重载杀进程"的表象，真正让人接不上的是
+> **能力位没声明 + 一个 inject 违规**。两个都不会在正常使用中报错，只有"重载一个活着的
+> 会话"这条路径才会把两者同时暴露出来——所以**重载测试要单独做**，别指望日常冒烟能覆盖。
 
 ---
 

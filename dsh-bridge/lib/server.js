@@ -313,7 +313,7 @@ export class PaseoHarnessServer {
     const rec = this.sessions.get(sessionId);
     if (rec !== undefined) {
       try {
-        const stored = this.ctx.sessionProjections?.stateOf(rec.handle.agent.session, 'agentPreset');
+        const stored = this.ctx.get('sessionProjections')?.stateOf(rec.handle.agent.session, 'agentPreset');
         if (stored !== undefined) return stored;
       } catch {
         /* projection unavailable; fall through to the default value */
@@ -657,10 +657,10 @@ export class PaseoHarnessServer {
       // one so its projected composition stays consistent.
       let resumeSetup = installSelection;
       if (presets !== undefined) {
-        const session = this.ctx.sessions.get(brandString(sessionId));
+        const session = this.ctx.get('sessions')?.get(brandString(sessionId));
         let storedPreset;
         try {
-          storedPreset = session === undefined ? undefined : this.ctx.sessionProjections?.stateOf(session, 'agentPreset');
+          storedPreset = session === undefined ? undefined : this.ctx.get('sessionProjections')?.stateOf(session, 'agentPreset');
         } catch {
           storedPreset = undefined;
         }

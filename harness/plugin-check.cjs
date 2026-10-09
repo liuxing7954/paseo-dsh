@@ -68,6 +68,7 @@ const check = (name, pass, detail) => {
       "prompt.command",
       "prompt.steer",
       "session.configure",
+      "session.persistence",
       "permission",
     ],
   });
@@ -83,6 +84,11 @@ const check = (name, pass, detail) => {
     Array.isArray(conn.capabilities) && conn.capabilities.includes("prompt.command"),
     `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
   );
+  check(
+    "provider declares session.persistence (reload recovery)",
+    Array.isArray(conn.capabilities) && conn.capabilities.includes("session.persistence"),
+    `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
+  );
 
   await conn.send({
     type: "session.open",
@@ -92,6 +98,16 @@ const check = (name, pass, detail) => {
   const ready = await until((e) => e.type === "session.ready", "session.ready");
   const sessionId = ready.sessionId;
   console.log(`  session ready: ${sessionId}\n`);
+
+  // 0. `session.opened` must carry a persistence handle, or Paseo stores a raw
+  // session id its decoder rejects on reopen ("Invalid plugin provider
+  // persistence handle"), leaving a reload-orphaned session unrecoverable.
+  const opened = events.find((e) => e.type === "session.opened");
+  check(
+    "session.opened carries a persistence handle",
+    opened !== undefined && typeof opened.persistence?.version === "number",
+    opened?.persistence ? JSON.stringify(opened.persistence).slice(0, 120) : "(no persistence on session.opened)",
+  );
 
   // 0. the slash menu: DSH's registered commands and user-invocable skills.
   const commandEvent = await until((e) => e.type === "session.commands", "session.commands");
