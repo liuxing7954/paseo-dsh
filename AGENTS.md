@@ -14,10 +14,13 @@
 
 三条最容易犯的错，先记住：
 
-1. **不要自己编模型配置。** 用 `tools/probe-provider.mjs` 探测出结果，原样采用。
-2. **`./install.sh` 不加 `--yes` 会停下来等输入**，你等不到；加 `--yes`，但加之前要把
-   脚本打印的安全提示原文转述给用户并取得同意。
+1. **不要自己编模型配置。** 用 `npx paseo-dsh probe` 探测出结果（仓库里的
+   `tools/probe-provider.mjs` 是同一个实现的瘦启动器），原样采用。
+2. **安装命令是 `paseo plugin add npm:paseo-dsh`。** 它会打印一条「Plugins are trusted,
+   unsandboxed code...」安全提示——先把原文转述给用户并取得同意，再执行安装。
+   插件首次加载会自己建好 DSH profile，**不需要再跑 `install.sh`**。
 3. **不要把 API key 写进任何会被提交的文件**。它在 `~/.dsh/.credentials.yaml`。
+4. **装完/改完配置后跑 `npx paseo-dsh doctor`** 确认全绿，再重启 daemon。
 
 ---
 
@@ -58,6 +61,7 @@ Paseo  ⇄  paseo-plugin/（direct provider 插件，跑在 daemon 进程里）
 界面不可信，断言要打在协议层：
 
 ```bash
+npx paseo-dsh doctor          # 一眼看安装是否完整：CLI/版本/profile/bridge/路由/key
 node harness/catalog.mjs      # provider / 模型 / 每个模型的真实思考档位
 node harness/probe.mjs        # 端到端提问往返
 node harness/route-test.mjs   # 逐条路由跑真实回合

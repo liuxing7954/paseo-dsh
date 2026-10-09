@@ -199,15 +199,19 @@ paseo-dsh/
 │   ├── lib/transport.js #   自带 JSON-RPC 行传输（支持 server→client 请求）
 │   ├── lib/server.js    #   会话/计划/思考档位/catalog 的实现
 │   └── cordis.patch.yml #   bundle 补丁：往 dsh-base 上挂桥接与提问工具
-├── paseo-plugin/        # Paseo 侧：provider 插件（direct provider 实现）
-│   ├── index.server.ts  #   registerProvider()
-│   └── server/
-│       ├── provider.ts  #   连接、catalog、会话生命周期、权限卡片
-│       ├── session.ts   #   单会话：提问→卡片、计划、思考档位、用量
-│       ├── dsh-process.ts # 一个会话一个 dsh 子进程
-│       └── timeline.ts  #   DSH 会话事件 → Paseo 时间线
-├── tools/               # 能力探测：帮你填自己的模型配置
-├── templates/           # profile 配置模板（含两处必踩的坑的注释）
+├── paseo-plugin/        # Paseo 侧：provider 插件（direct provider 实现；npm 包 paseo-dsh）
+│   ├── index.server.ts  #   registerProvider() + 首次加载时自举 DSH profile
+│   ├── server/
+│   │   ├── provider.ts  #   连接、catalog、会话生命周期、权限卡片
+│   │   ├── session.ts   #   单会话：提问→卡片、计划、思考档位、用量
+│   │   ├── dsh-process.ts # 一个会话一个 dsh 子进程
+│   │   ├── timeline.ts  #   DSH 会话事件 → Paseo 时间线
+│   │   ├── bootstrap.ts #   自举：写 profile 文件 + 把内嵌 bridge 落盘
+│   │   └── bridge-assets.ts # 生成物：bridge 的 base64 内嵌副本
+│   ├── lib/             #   doctor（自检）/ probe（能力探测）
+│   └── bin/paseo-dsh.mjs#   npx paseo-dsh {doctor|probe}
+├── tools/               # 探测工具的瘦启动器（实现在 paseo-plugin/lib 里）
+├── templates/           # profile 配置模板（含必踩的坑的注释）
 ├── harness/             # 独立探针，不依赖 Paseo 即可验证桥接与插件
 └── docs/                # 改造指南 + 实战缺陷记录
 ```
@@ -233,7 +237,16 @@ paseo-dsh/
 每个 Paseo 会话对应一个独立的 `dsh --profile <name>` 子进程，通过 stdio 上的换行分隔
 JSON-RPC 通信。会话之间进程隔离，一个崩了不会拖垮 daemon。
 
-## 本地验证（不需要 Paseo）
+## 自测 / 本地验证（不需要 Paseo）
+
+**先跑随包 CLI 自检**（只读，不改任何东西）：
+
+```bash
+npx paseo-dsh doctor          # 安装完整性：CLI/版本/profile/bridge/路由/key
+npx paseo-dsh probe --base-url <端点> --api-key-env <变量名> --model <模型id>   # 端点能力
+```
+
+**再对协议层做断言**（界面不可信，事件流才可信）：
 
 ```bash
 node harness/catalog.mjs      # 列出 provider / 模型 / 每个模型真实支持的思考档位

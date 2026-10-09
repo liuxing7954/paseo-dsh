@@ -88,10 +88,11 @@ shutdown            收尾
 Paseo 的模型选择器、思考档位选择器、图片上传按钮**全部由你报的能力驱动**。
 报错了不会报错，只会"功能悄悄不对"。
 
-**别猜，去探测。** 本仓库带了一个工具：
+**别猜，去探测。** 随 npm 包带了一个工具（克隆仓库的话同在 `tools/probe-provider.mjs`，
+是同一个实现的瘦启动器）：
 
 ```bash
-node tools/probe-provider.mjs \
+npx paseo-dsh probe \
   --base-url https://your-gateway/v1 \
   --api-key-env YOUR_API_KEY \
   --model your-model-id
@@ -271,6 +272,19 @@ if (provider === undefined || model === undefined) {
 ## 5. 验证方法论：怎么自己把问题找出来
 
 界面不可信，日志太吵。**直接对 bridge 打协议帧**是最可靠的方式。
+
+### 5.0 先跑随包的自检
+
+这个项目把"安装是否完整"的自检做成了一条命令，先跑它，能省一堆瞎猜：
+
+```bash
+npx paseo-dsh doctor
+```
+
+只读不改：查 `dsh`/`paseo` 版本、插件是否已把 DSH profile 建好、bridge 是否落地、
+`cordis.patch.yml` 是否填了路由、每个 `apiKeyEnv` 是否有对应凭证，缺什么直接点出来。
+它回答的是"**装好了没**"；下面几节回答的是"**行为对不对**"——两者互补。绝大多数
+"接不上"的报障，跑一遍 `doctor` 就定位了。
 
 ### 5.1 用一次性脚本断言事件流
 

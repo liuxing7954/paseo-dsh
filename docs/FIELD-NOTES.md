@@ -160,7 +160,8 @@ provider 级默认值改成**所有模型都支持的交集**而不是并集。
 **根因**：DSH 对 `xhigh`/`max` 的处理和五个基础档位不同——**缺键即视为不支持**，
 而不是取默认值。
 
-**修法**：显式列出 `max: max`。这一条现在由 `tools/probe-provider.mjs` 自动覆盖。
+**修法**：显式列出 `max: max`。这一条现在由 `npx paseo-dsh probe`（仓库里是
+`tools/probe-provider.mjs`，同一实现）自动覆盖。
 
 ---
 
@@ -235,4 +236,4 @@ store），只有最上层把它们映射成空字符串并传了 `undefined`—
 
 这份记录里刻意不提任何具体的 provider、模型或端点——**你的路由和模型完全由你的
 profile 决定**。同一个缺陷在不同人那里会表现成不一样的症状，所以照抄别人的路由表
-没有意义，用 `tools/probe-provider.mjs` 测自己的才是正路。
+没有意义，用 `npx paseo-dsh probe` 测自己的才是正路。

@@ -196,9 +196,12 @@ cat <<EOF
            --api-key-env <YOUR_KEY_ENV_VAR> \\
            --model <your-model-id>
 
-    2. Restart the Paseo daemon so it loads the plugin and the new config.
+    2. Self-check the install:
+         npx paseo-dsh doctor
 
-    3. In Paseo, pick the "DeepSeek Harness (native)" provider.
+    3. Restart the Paseo daemon so it loads the plugin and the new config.
+
+    4. In Paseo, pick the "DeepSeek Harness (native)" provider.
 
   See docs/ADOPTION.md for the full walkthrough and the pitfalls to avoid.
 EOF
