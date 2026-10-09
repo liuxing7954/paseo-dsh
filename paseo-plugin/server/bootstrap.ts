@@ -13,7 +13,7 @@
  *
  * @module dsh-paseo/server/bootstrap
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BRIDGE_FILES, BRIDGE_PACKAGE_NAME, PROFILE_PATCH_TEMPLATE_BASE64 } from "./bridge-assets";
@@ -52,13 +52,9 @@ function profilePackageJson(profile: string): string {
   )}\n`;
 }
 
-/** Write only when the bytes differ, so a load never churns file mtimes. */
-function writeIfChanged(path: string, content: string | Uint8Array): boolean {
-  try {
-    if (existsSync(path) && readFileSync(path).equals(Buffer.from(content as never))) return false;
-  } catch {
-    /* unreadable or absent: fall through to write */
-  }
+/** Write only when the path does not exist yet. */
+function writeIfAbsent(path: string, content: string): boolean {
+  if (existsSync(path)) return false;
   writeFileSync(path, content);
   return true;
 }
@@ -81,9 +77,12 @@ export function ensurePaseoProfile(): ProvisionResult {
   const dir = join(dshHome(), "profiles", profile);
   mkdirSync(join(dir, "node_modules"), { recursive: true });
 
-  writeIfChanged(join(dir, "package.json"), profilePackageJson(profile));
-  writeIfChanged(join(dir, "cordis.yml"), CORDIS_YML);
-  writeIfChanged(join(dir, "pnpm-workspace.yaml"), PNPM_WORKSPACE);
+  // The profile's own files belong to the user: create a missing one, but never
+  // overwrite a customized package.json (extra dependencies), cordis.yml, or
+  // workspace file. Only the bridge we own is rewritten.
+  writeIfAbsent(join(dir, "package.json"), profilePackageJson(profile));
+  writeIfAbsent(join(dir, "cordis.yml"), CORDIS_YML);
+  writeIfAbsent(join(dir, "pnpm-workspace.yaml"), PNPM_WORKSPACE);
 
   // Replace whatever bridge is present — an older copy, or the symlink the
   // repo's install.sh creates — so the profile always matches this plugin build.

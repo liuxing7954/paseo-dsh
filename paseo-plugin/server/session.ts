@@ -80,6 +80,9 @@ export class DshSession {
   /** Current DSH permission preset name, and the ones it can switch to. */
   #permission: string | null = null;
   #permissionPresets: string[] = [];
+  /** Current agent preset (persona + capabilities), and the switchable ones. */
+  #preset: string | null = null;
+  #presetOptions: Array<{ label: string; value: string }> = [];
   #closed = false;
 
   constructor(options: DshSessionOptions) {
@@ -122,6 +125,19 @@ export class DshSession {
   /** The committed configuration Paseo renders in the composer. */
   configState(): ProviderConfigState {
     const settings: ProviderSetting[] = [];
+    // The agent preset is a creation-time persona + capability set. Paseo still
+    // renders it as a normal select, but DSH locks the choice once the session's
+    // first turn starts, so switching it later is rejected and snaps back.
+    if (this.#presetOptions.length > 0) {
+      settings.push({
+        type: "select",
+        id: "preset",
+        label: "Preset",
+        description: "DSH agent preset — persona and capabilities. Fixed once the session starts.",
+        value: this.#preset,
+        options: this.#presetOptions,
+      });
+    }
     // Surface DSH's permission presets as a composer control, so switching
     // between sandboxed and full access doesn't require typing /permission.
     if (this.#permissionPresets.length > 0) {
@@ -194,6 +210,20 @@ export class DshSession {
     if (!permission.available) return;
     this.#permission = permission.current;
     this.#permissionPresets = permission.presets;
+  }
+
+  /**
+   * Read the agent presets the profile declares, for the composer. Optional: a
+   * profile that mounts no preset registry simply gets no Preset control.
+   */
+  async loadPresets(): Promise<void> {
+    const info = await this.#require().presets();
+    if (!info.available) return;
+    this.#preset = info.current ?? info.default;
+    this.#presetOptions = info.presets.map((preset) => ({
+      value: preset.id,
+      label: preset.name ?? preset.id,
+    }));
   }
 
   /** Accept one prompt and start its turn. */
@@ -344,6 +374,23 @@ export class DshSession {
         throw new Error(result.text ?? `could not set permission preset "${requestedPermission}"`);
       }
       this.#permission = requestedPermission;
+    }
+
+    const requestedPreset = changes.settings?.["preset"];
+    if (
+      typeof requestedPreset === "string" &&
+      requestedPreset !== "" &&
+      requestedPreset !== this.#preset
+    ) {
+      // A preset is a creation-time choice; DSH refuses the change once the
+      // session's first turn has started. On refusal keep the real value and log
+      // it — the caller re-emits config, so the composer snaps back.
+      try {
+        const applied = await process.setConfig({ preset: requestedPreset });
+        this.#preset = applied.preset ?? requestedPreset;
+      } catch (error) {
+        this.#options.log(`preset change rejected: ${messageOf(error)}`);
+      }
     }
   }
 

@@ -103,6 +103,14 @@ export class PaseoHarnessServer {
      */
     this.pendingPlanMode = false;
 
+    /**
+     * sessionId -> preset id chosen before its agent existed. A preset is a
+     * creation-time choice (DSH locks it once the session's first turn starts),
+     * so a pick made while the composer is still being configured is remembered
+     * here and applied when the agent is created.
+     */
+    this.pendingPresets = new Map();
+
     /** sessionId -> { selection, dispose } for live per-agent model control. */
     this.controls = new Map();
     /** sessionId -> { handle } for agents this server owns. */
@@ -255,6 +263,9 @@ export class PaseoHarnessServer {
 
   /** Mutate the per-agent route, or the default route while no agent exists yet. */
   async configSet(params) {
+    if (typeof params.preset === 'string' && params.preset !== '') {
+      await this.setPreset(params.sessionId, params.preset);
+    }
     const rec = this.sessions.get(params.sessionId);
     if (rec === undefined) {
       if (typeof params.provider === 'string') this.provider = params.provider;
@@ -266,6 +277,7 @@ export class PaseoHarnessServer {
         provider: this.provider,
         model: this.model,
         reasoningEffort: this.reasoningEffort ?? null,
+        preset: this.currentPreset(params.sessionId),
       };
     }
     this.assertLiveAgent(rec, params.sessionId);
@@ -282,7 +294,68 @@ export class PaseoHarnessServer {
       throw new Error('model selection requires both provider and model');
     }
     selection.current = next;
-    return { ...next, reasoningEffort: next.reasoningEffort ?? null };
+    return {
+      ...next,
+      reasoningEffort: next.reasoningEffort ?? null,
+      preset: this.currentPreset(params.sessionId),
+    };
+  }
+
+  /** The preset a session runs (chosen, else the stored projection, else default). */
+  currentPreset(sessionId) {
+    const service = this.ctx.get('agentPresets');
+    if (service === undefined) return null;
+    // A preset chosen or applied in this process is authoritative: the session
+    // projection folds the selection event asynchronously, so reading it right
+    // after a switch would still show the previous value.
+    const chosen = this.pendingPresets.get(sessionId);
+    if (chosen !== undefined) return chosen;
+    const rec = this.sessions.get(sessionId);
+    if (rec !== undefined) {
+      try {
+        const stored = this.ctx.sessionProjections?.stateOf(rec.handle.agent.session, 'agentPreset');
+        if (stored !== undefined) return stored;
+      } catch {
+        /* projection unavailable; fall through to the default value */
+      }
+    }
+    return service.defaultId ?? null;
+  }
+
+  /**
+   * Choose a session's agent preset. Before the agent exists the choice is
+   * queued; once it does, DSH's `select` applies it — and refuses once the
+   * session's first turn has started, which is the lock the composer must honor.
+   */
+  async setPreset(sessionId, id) {
+    const service = this.ctx.get('agentPresets');
+    if (service === undefined) throw new Error('agent presets are not mounted in this profile');
+    const rec = this.sessions.get(sessionId);
+    if (rec === undefined) {
+      this.pendingPresets.set(sessionId, id);
+      return;
+    }
+    this.assertLiveAgent(rec, sessionId);
+    const applied = await service.select(rec.handle.agent, id);
+    this.pendingPresets.set(sessionId, applied ?? id);
+  }
+
+  /** Report the configured agent presets and the one this session runs. */
+  async presets(params) {
+    const service = this.ctx.get('agentPresets');
+    if (service === undefined) return { available: false, presets: [], current: null, default: null };
+    const list = await service.list();
+    return {
+      available: true,
+      default: service.defaultId ?? null,
+      current: this.currentPreset(params.sessionId),
+      presets: list.map((preset) => ({
+        id: preset.id,
+        ...(preset.name === undefined ? {} : { name: preset.name }),
+        ...(preset.description === undefined ? {} : { description: preset.description }),
+        ...(preset.broken === undefined ? {} : { broken: preset.broken }),
+      })),
+    };
   }
 
   /**
@@ -489,6 +562,8 @@ export class PaseoHarnessServer {
         return this.runCommand(params);
       case 'paseo/permission':
         return this.permission(params);
+      case 'paseo/presets':
+        return this.presets(params);
       case 'paseo/plan/get':
         return this.planGet(params);
       case 'paseo/plan/set':
@@ -539,18 +614,36 @@ export class PaseoHarnessServer {
       ...(this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort }),
     };
     const control = { selection: { current: initial, assembled: undefined }, dispose: undefined };
-    const setup = (agentCtx) => {
+    const installSelection = (agentCtx) => {
       control.dispose = installModelSelection(agentCtx, control.selection);
     };
+
+    // A session that runs under an agent preset mounts it during setup, exactly
+    // like api-session-controller's composeAgent. Without a preset registry in
+    // the profile this is skipped and the session composes at the host plane as
+    // before, so preset support stays opt-in.
+    const presets = this.ctx.get('agentPresets');
+    let agentPreset;
+    let setup = installSelection;
+    if (presets !== undefined) {
+      const resolvedId = (await presets.resolve(this.pendingPresets.get(sessionId))).id;
+      agentPreset = resolvedId;
+      setup = async (agentCtx, agent) => {
+        installSelection(agentCtx);
+        await presets.mount(agentCtx, resolvedId);
+      };
+    }
+
     const agentOptions = {
       ...initial,
       ...(this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens }),
     };
+    const meta = { cwd: this.cwd, ...(agentPreset === undefined ? {} : { agentPreset }) };
     let handle;
     try {
       handle = await this.ctx.agents.create({
         sessionId: brandString(sessionId),
-        meta: { cwd: this.cwd },
+        meta,
         agentOptions,
         setup,
       });
@@ -560,10 +653,27 @@ export class PaseoHarnessServer {
       // id on refresh and reconnect, so resume the persisted session and keep
       // the conversation alive instead of failing the open.
       if (!/already exists/i.test(String(error?.message ?? error))) throw error;
+      // A resumed session keeps the preset it was created with; re-mount the same
+      // one so its projected composition stays consistent.
+      let resumeSetup = installSelection;
+      if (presets !== undefined) {
+        const session = this.ctx.sessions.get(brandString(sessionId));
+        let storedPreset;
+        try {
+          storedPreset = session === undefined ? undefined : this.ctx.sessionProjections?.stateOf(session, 'agentPreset');
+        } catch {
+          storedPreset = undefined;
+        }
+        const resolvedId = (await presets.resolve(storedPreset ?? this.pendingPresets.get(sessionId))).id;
+        resumeSetup = async (agentCtx) => {
+          installSelection(agentCtx);
+          await presets.mount(agentCtx, resolvedId);
+        };
+      }
       handle = await this.ctx.agents.resume({
         resumeSessionId: brandString(sessionId),
         agentOptions,
-        setup,
+        setup: resumeSetup,
       });
     }
     const rec = { handle, control };

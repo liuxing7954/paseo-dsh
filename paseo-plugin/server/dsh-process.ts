@@ -256,11 +256,29 @@ export class DshProcess {
     model?: string;
     provider?: string;
     reasoningEffort?: string | null;
-  }): Promise<{ provider: string; model: string; reasoningEffort: string | null }> {
+    preset?: string;
+  }): Promise<{ provider: string; model: string; reasoningEffort: string | null; preset?: string | null }> {
     return (await this.#request("paseo/config/set", {
       sessionId: this.#options.sessionId,
       ...changes,
-    })) as { provider: string; model: string; reasoningEffort: string | null };
+    })) as { provider: string; model: string; reasoningEffort: string | null; preset?: string | null };
+  }
+
+  /** List the profile's agent presets and the one this session runs. */
+  async presets(): Promise<{
+    available: boolean;
+    presets: Array<{ id: string; name?: string; description?: string; broken?: string }>;
+    current: string | null;
+    default: string | null;
+  }> {
+    return (await this.#request("paseo/presets", {
+      sessionId: this.#options.sessionId,
+    })) as {
+      available: boolean;
+      presets: Array<{ id: string; name?: string; description?: string; broken?: string }>;
+      current: string | null;
+      default: string | null;
+    };
   }
 
   /** Ask the bridge to dispose the agent and exit. */

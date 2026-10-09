@@ -19,6 +19,7 @@ DSH 侧是一个 profile bundle。
 | 图片（多模态） | ⚠️ 多数不承载 | ✅ 附件入库后按路由模态投递（需在 profile 声明图片模态） |
 | 斜杠命令 / 技能 | ⚠️ 多为命令子集 | ✅ `/` 菜单列出 DSH 命令与 user-invocable 技能；命令在运行时执行，技能按 `/name` 注入 |
 | 权限模式（沙箱） | ❌ 无统一开关 | ✅ composer 里的 **Permissions** 下拉，切换 DSH 的沙箱 + 审批预设 |
+| 人设预设（Preset） | ❌ | ✅ profile 挂了 agent-preset registry 时，composer 出现 **Preset** 下拉（建会话时选、首回合后锁定） |
 | 终止后续聊 | — | ✅ 只取消当前回合，会话保留 |
 
 ## 🤖 复制这段给你的 AI Agent（推荐）
@@ -300,6 +301,39 @@ Paseo composer 里有一个 **Permissions** 下拉，可随时切换预设（等
 ```
 
 改回默认就把 `mode` 设回 `workspace-write`、`policy` 设回 `ask`。改完重启 daemon。
+
+## 人设预设（Preset，可选）
+
+DSH 的 agent preset 能把"人设 + 一套能力"打包成一个选项。插件**不强制**它——只有你的 profile
+挂了 `@deepseek-ai/dsh-agent-preset-registry` 并声明了 preset，composer 里才会出现 **Preset** 下拉。
+
+语义和 DSH 一致：**建会话时选，首个回合后锁定**（之后再改会被拒绝并弹回）。
+
+启用示例（profile 的 `cordis.patch.yml`）：
+
+```yaml
+- insert:
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard
+        selectedDefault: standard
+    - id: preset-standard
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: standard
+        order: 1
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a helpful assistant.
+              suffix: Your working directory is {{cwd}}.
+```
+
+> 想让某个人设自带额外工具（例如挂一个领域工具插件），把它加进对应 preset 的 `plugins:` 即可——
+> 插件对 preset 是"加法"：host 层的工具照常可用，preset 只负责人设与增量能力。
+> 建议把 host `system-prompt` 的人设清空（`personaPrefix: ''`），改由各 preset 自带，避免重复。
 
 ## 版本策略
 

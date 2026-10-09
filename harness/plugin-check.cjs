@@ -104,7 +104,22 @@ const check = (name, pass, detail) => {
       : "(empty command list)",
   );
 
-  // 0b. the permission setting is advertised and switching it moves the DSH preset.
+  // 0b. the agent-preset select is advertised when the profile declares presets.
+  const presetSetting = events
+    .filter((e) => e.type === "session.config")
+    .flatMap((e) => e.config?.settings ?? [])
+    .find((s) => s.id === "preset");
+  if (presetSetting !== undefined) {
+    check(
+      "→ preset setting advertised",
+      (presetSetting.options ?? []).length > 0,
+      `options=[${(presetSetting.options ?? []).map((o) => o.value).join(", ")}]`,
+    );
+  } else {
+    console.log("  (no agent-preset registry in this profile — preset select not expected)");
+  }
+
+  // 0c. the permission setting is advertised and switching it moves the DSH preset.
   const permissionSetting = events
     .filter((e) => e.type === "session.config")
     .flatMap((e) => e.config?.settings ?? [])

@@ -34,6 +34,8 @@ What you get that the ACP boundary can't carry:
 - A `/` menu with DSH's registered commands **and** user-invocable skills
 - A **Permissions** select in the composer that switches DSH's sandbox preset
   (read-only / workspace-write / danger-full-access)
+- A **Preset** select when the profile declares agent presets — DSH's
+  persona+capability bundles, chosen at session start and locked once it begins
 
 Full documentation, the adoption guide, and 18 real defects with their fixes
 live in the main repository: **https://github.com/liuxing7954/paseo-dsh**

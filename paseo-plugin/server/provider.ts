@@ -270,6 +270,21 @@ class DshConnection implements ProviderConnection {
       await session.configure({ thinkingOption: config.thinkingOption });
     }
 
+    const settings = config.settings ?? {};
+    // The agent preset is a creation-time choice: apply it BEFORE the agent is
+    // created (loadCommands creates it) so the session is born under the chosen
+    // preset. DSH locks the preset after the session's first turn, so applying it
+    // after `session.ready` would already be too late — the pick would snap back
+    // to the profile default.
+    const preset = settings["preset"];
+    if (typeof preset === "string" && preset !== "") {
+      try {
+        await session.configure({ settings: { preset } });
+      } catch (error) {
+        process.stderr.write(`[${PROVIDER_ID}] preset "${preset}" rejected: ${messageOf(error)}\n`);
+      }
+    }
+
     // Advertise the `/` menu before `session.ready` so the composer has it the
     // moment the session is usable. A command catalog is an enhancement, never a
     // precondition: a discovery failure logs and leaves the menu empty rather
@@ -277,8 +292,20 @@ class DshConnection implements ProviderConnection {
     try {
       await session.loadCommands();
       await session.loadPermission();
+      await session.loadPresets();
     } catch (error) {
       process.stderr.write(`[${PROVIDER_ID}] command catalog failed: ${messageOf(error)}\n`);
+    }
+
+    // Permission applies to the live agent (it runs `/permission`), so it must
+    // wait until one exists.
+    const permission = settings["permission"];
+    if (typeof permission === "string" && permission !== "") {
+      try {
+        await session.configure({ settings: { permission } });
+      } catch (error) {
+        process.stderr.write(`[${PROVIDER_ID}] permission "${permission}" rejected: ${messageOf(error)}\n`);
+      }
     }
 
     this.#emit({
