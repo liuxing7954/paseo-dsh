@@ -251,6 +251,40 @@ store），只有最上层把它们映射成空字符串并传了 `undefined`—
 
 ---
 
+## 第六轮：上下文占用读数
+
+### 20. 上下文占用（context window）永远是空的
+
+**症状**：Paseo 的用量读数只有 token 数字，没有上下文窗口与占用百分比；按本次需求，
+provider 显示名同步简化为 `DeepSeek Harness`，保留 Provider ID。
+
+**根因有两层**：
+
+| 层 | 根因 |
+|----|------|
+| 数据从未转发 | `session.usage` 只在 `assistant/message` 上取 `data.usage` 的 input/cache/output，从未带 `contextWindowMaxTokens` / `contextWindowUsedTokens`；而 Paseo 的占用读数**只认这两项**。DSH 自己有一整套回放式计量（`ctx.tokenMeter` 与 `sessionProjections.contextPressure`），但桥从没把它暴露出来。 |
+| 语义容易搞错 | DSH 的 `TokenUsage.inputTokens` 是**未缓存**输入，缓存读写在独立桶里（`uncachedInputTokens` 与 `cacheReadTokens` 互斥）。累计计费用量不等于当前上下文；既不能只算未缓存输入，也不能把缓存桶重复相加。 |
+
+**修法**：
+
+- 桥新增 `paseo/usage`：读 `sessionProjections.snapshot(session, ['contextPressure'])` 的
+  **客户端视图**——同路由时以 `projectedTokens ?? pressureTokens` 作为已用量，
+  与 DSH 自己的上下文计**同源**。容量由 `llm.resolveModelInfo()` 按**当前路由**解析；
+  选中路由与日志不同时，用 DSH `tokenMeter.measure()` 重新计量。缺数据即**省略**，
+  不把旧路由容量当兜底、不硬编码窗口大小。
+- 插件分别替换 token 统计和上下文统计，再合成完整 `lastUsage` 快照发送。Paseo 每次
+  **整体替换** `lastUsage`，只发一半会抹掉另一半；新快照的未知字段必须清除旧值。
+- 刷新点：会话打开/恢复（含 history skip，恢复后无需新回合即可显示）、步骤和工具完成、回合结束、
+  `compaction/end`（压缩后占用应立即下降）、`configure`（切模型）。用递增 generation
+  丢弃过期的异步响应，会话关闭后不再发事件。相邻步骤事件合并触发，不逐 token 扫历史。
+
+**判定标准**：一次真实回合结束后，`session.usage` 应同时带 `inputTokens` 等数字与
+`contextWindowUsedTokens` / `contextWindowMaxTokens`。`harness/plugin-check.cjs` 检查真实回合与
+无新回合恢复；`harness/context-usage-check.cjs` 检查合并、旧响应、缺数据和关闭时序。
+超窗或错误状态允许原始占用超过容量，不能为了比例正常而截断真实值。
+
+---
+
 ## 已知限制（未修，有意为之）
 
 | 项 | 说明 |

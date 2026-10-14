@@ -21,8 +21,15 @@ import type {
   ProviderToolCallDetail,
   ProviderUsage,
 } from "@getpaseo/plugin/server/provider";
-import type { JsonValue } from "@getpaseo/protocol/agent-types";
-import { DshProcess, type DshAnswer, type DshQuestion, type DshQuestionRequest, type DshRoute } from "./dsh-process";
+import type { JsonValue } from "./dsh-process";
+import {
+  DshProcess,
+  type DshAnswer,
+  type DshQuestion,
+  type DshQuestionRequest,
+  type DshRoute,
+  type DshUsage,
+} from "./dsh-process";
 import { TimelineBuilder } from "./timeline";
 
 /** Modes Paseo offers in the composer. `plan` drives DSH's plan-mode service. */
@@ -102,6 +109,15 @@ export class DshSession {
   /** Current agent preset (persona + capabilities), and the switchable ones. */
   #preset: string | null = null;
   #presetOptions: Array<{ label: string; value: string }> = [];
+  /**
+   * Last usage snapshot published to Paseo. Paseo replaces its whole usage
+   * record on every `session.usage`, so token counts and context occupancy must
+   * always travel together; this is the complete picture they are merged into.
+   */
+  #lastUsage: ProviderUsage | undefined;
+  /** Newest issued occupancy poll; a slower older response must not win. */
+  #usageGeneration = 0;
+  #usageRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
 
   constructor(options: DshSessionOptions) {
@@ -127,6 +143,7 @@ export class DshSession {
       onExit: (code, signal) => {
         if (this.#closed) return;
         this.#closed = true;
+        clearTimeout(this.#usageRefreshTimer);
         this.#options.emit({
           type: "session.runtime_failed",
           sessionId: this.id,
@@ -244,6 +261,57 @@ export class DshSession {
       value: preset.id,
       label: preset.name ?? preset.id,
     }));
+  }
+
+  /**
+   * Refresh the context-occupancy half of the usage readout from the runtime.
+   *
+   * DSH measures occupancy on demand by replaying the session log through its
+   * token meter, so it is polled where it can change: a session open or resume,
+   * the end of a turn, a model switch, and a compaction. Only the newest
+   * in-flight poll may publish, so a slow answer from a previous model — or one
+   * arriving after the session closed — can never overwrite fresher numbers.
+   * Unknown fields are omitted: the composer shows what the runtime actually
+   * knows rather than a fabricated window.
+   */
+  async refreshUsage(): Promise<void> {
+    if (this.#closed) return;
+    clearTimeout(this.#usageRefreshTimer);
+    this.#usageRefreshTimer = undefined;
+    const process = this.#process;
+    if (process === undefined) return;
+    const generation = ++this.#usageGeneration;
+    let snapshot: DshUsage;
+    try {
+      snapshot = await process.usage();
+    } catch (error) {
+      if (this.#closed || generation !== this.#usageGeneration) return;
+      this.#options.log(`usage query failed: ${messageOf(error)}`);
+      snapshot = { available: false };
+    }
+    if (this.#closed || generation !== this.#usageGeneration) return;
+    const patch: ProviderUsage = {
+      ...(snapshot.available && typeof snapshot.contextWindow === "number" && Number.isSafeInteger(snapshot.contextWindow) && snapshot.contextWindow > 0
+        ? { contextWindowMaxTokens: snapshot.contextWindow }
+        : {}),
+      ...(snapshot.available && typeof snapshot.usedTokens === "number" && Number.isSafeInteger(snapshot.usedTokens) && snapshot.usedTokens >= 0
+        ? { contextWindowUsedTokens: snapshot.usedTokens }
+        : {}),
+    };
+    // This is a complete context snapshot: absence clears a formerly known
+    // value instead of retaining another model's capacity or a stale numerator.
+    this.#emitUsage(patch, true);
+  }
+
+  /** Coalesce step/tool updates without measuring on every streamed token. */
+  #queueUsageRefresh(): void {
+    if (this.#closed) return;
+    this.#usageGeneration += 1;
+    if (this.#usageRefreshTimer !== undefined) return;
+    this.#usageRefreshTimer = setTimeout(() => {
+      this.#usageRefreshTimer = undefined;
+      void this.refreshUsage();
+    }, 75);
   }
 
   /**
@@ -374,15 +442,26 @@ export class DshSession {
   /** Apply a composer change: model, mode, thinking option or settings. */
   async configure(changes: ProviderConfigChanges): Promise<void> {
     const process = this.#require();
+    // A route change invalidates any occupancy poll still in flight: its answer
+    // describes the previous model's capacity and must not overwrite the new
+    // one's. `refreshUsage` below issues the replacement poll.
+    if (changes.model !== undefined && changes.model !== null) {
+      this.#usageGeneration += 1;
+      this.#emitUsage({}, true);
+    }
 
     if (changes.model !== undefined && changes.model !== null) {
       const next = parseRoute(changes.model, this.#route);
-      this.#route = next;
-      await process.setConfig({
+      const applied = await process.setConfig({
         provider: next.provider,
         model: next.model,
         reasoningEffort: next.reasoningEffort ?? null,
       });
+      this.#route = {
+        provider: applied.provider,
+        model: applied.model,
+        ...(applied.reasoningEffort === null ? {} : { reasoningEffort: applied.reasoningEffort }),
+      };
     }
 
     if (changes.thinkingOption !== undefined) {
@@ -447,6 +526,10 @@ export class DshSession {
         this.#options.log(`preset change rejected: ${messageOf(error)}`);
       }
     }
+
+    // A model switch changes the capacity and a mode switch does not, but both
+    // end with the composer asking for a current readout; one refresh covers it.
+    void this.refreshUsage();
   }
 
   /** Answer a pending question card. */
@@ -470,6 +553,7 @@ export class DshSession {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    clearTimeout(this.#usageRefreshTimer);
     await this.#process?.shutdown();
   }
 
@@ -491,6 +575,9 @@ export class DshSession {
       const turnId = this.#turnId;
       this.#turnId = null;
       this.#options.emit({ type: "session.turn", sessionId: this.id, turnId, state: "completed" });
+      // The turn's request reported fresh provider usage; refresh the occupancy
+      // now so the readout is current even when no further turn arrives.
+      void this.refreshUsage();
     }
   }
 
@@ -510,20 +597,53 @@ export class DshSession {
     }
     // DSH reports token accounting on the assistant message and nowhere else, so
     // without this the composer's usage readout never had anything to show.
+    // `#emitUsage` merges it with the context occupancy already known, because
+    // Paseo replaces its whole usage record per event.
     if (event.type === "assistant/message") {
       const data = isRecord(event.data) ? event.data : {};
-      if (isRecord(data.usage)) {
-        this.#options.emit({
-          type: "session.usage",
-          sessionId: this.id,
-          ...(this.#turnId === null ? {} : { turnId: this.#turnId }),
-          usage: providerUsage(data.usage),
-        });
-      }
+      if (isRecord(data.usage)) this.#emitUsage(providerUsage(data.usage));
     }
+    if (["assistant/message", "assistant/attempt", "tool/result", "step/end", "request/context", "request/header"].includes(event.type)) {
+      this.#queueUsageRefresh();
+    }
+    // A compaction rewrites the surface, so the next request's prompt shrinks.
+    // Refresh here so the occupancy readout drops without waiting for a turn.
+    if (event.type === "compaction/end") void this.refreshUsage();
     for (const item of this.#timeline.consume(event)) {
       this.#options.emit({ type: "timeline.item", sessionId: this.id, item });
     }
+  }
+
+  /**
+   * Replace one half of the usage snapshot and publish the whole thing.
+   *
+   * Paseo replaces its entire usage record on every `session.usage`, so a patch
+   * carrying only token counts would erase the context fields, and a patch
+   * carrying only occupancy would erase the counts. Merging here keeps one
+   * complete, mutually consistent picture on the composer.
+   */
+  #emitUsage(patch: ProviderUsage, replaceContext = false): void {
+    if (this.#closed) return;
+    const merged: ProviderUsage = { ...this.#lastUsage };
+    if (replaceContext) {
+      delete merged.contextWindowMaxTokens;
+      delete merged.contextWindowUsedTokens;
+    } else {
+      // Message usage describes this step, not a delta. An omitted cache bucket
+      // must not keep the previous step's count.
+      delete merged.inputTokens;
+      delete merged.cachedInputTokens;
+      delete merged.outputTokens;
+      delete merged.totalCostUsd;
+    }
+    Object.assign(merged, patch);
+    this.#lastUsage = merged;
+    this.#options.emit({
+      type: "session.usage",
+      sessionId: this.id,
+      ...(this.#turnId === null ? {} : { turnId: this.#turnId }),
+      usage: merged,
+    });
   }
 
   /**

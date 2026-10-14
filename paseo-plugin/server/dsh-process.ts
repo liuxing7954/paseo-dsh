@@ -10,6 +10,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 
+/** JSON-compatible value tree. */
+export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+
 /** Provider/model/thinking route pinned for the life of one process. */
 export interface DshRoute {
   provider: string;
@@ -66,6 +69,19 @@ export interface DshCatalog {
   defaultModel?: string;
   defaultReasoningEffort?: string | null;
   planMode?: boolean;
+}
+
+/**
+ * The session's current context occupancy, measured by DSH's own token meter.
+ * Fields are absent when the runtime does not know them; a caller must never
+ * substitute a default, because a fabricated window is worse than none.
+ */
+export interface DshUsage {
+  available: boolean;
+  /** Current context capacity of the live route, in tokens. */
+  contextWindow?: number;
+  /** Tokens the next request's prompt is expected to occupy. */
+  usedTokens?: number;
 }
 
 /**
@@ -216,6 +232,17 @@ export class DshProcess {
     return (await this.#request("paseo/permission", {
       sessionId: this.#options.sessionId,
     })) as { available: boolean; current: string | null; presets: string[] };
+  }
+
+  /**
+   * Read the session's current context occupancy from the runtime's own token
+   * meter. Absent fields mean the runtime does not know them yet; they are
+   * never defaulted here.
+   */
+  async usage(): Promise<DshUsage> {
+    return (await this.#request("paseo/usage", {
+      sessionId: this.#options.sessionId,
+    })) as DshUsage;
   }
 
   /** Send one text prompt. Resolves when the bridge accepts it, not when the turn ends. */

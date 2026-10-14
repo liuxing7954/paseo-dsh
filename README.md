@@ -156,7 +156,7 @@ npx paseo-dsh doctor
 它会检查 `dsh`/`paseo` 版本、profile 是否就绪、bridge 是否落地、路由是否填好、
 `apiKeyEnv` 对应的 key 是否存在——缺什么直接告诉你（只读，不改任何东西）。全绿后
 **重启 Paseo daemon**（`paseo daemon restart`），在 Paseo 里新建会话时选
-**DeepSeek Harness (native)** 这个 provider。
+**DeepSeek Harness** 这个 provider。
 
 > **不确定端点支不支持推理 / thinking 档位 / vision？** 用同一个 CLI 探测你的端点，
 > 它会直接打过去、把上面 a) 那段填好吐给你（同样不需要 clone）：

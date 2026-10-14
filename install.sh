@@ -201,7 +201,7 @@ cat <<EOF
 
     3. Restart the Paseo daemon so it loads the plugin and the new config.
 
-    4. In Paseo, pick the "DeepSeek Harness (native)" provider.
+    4. In Paseo, pick the "DeepSeek Harness" provider.
 
   See docs/ADOPTION.md for the full walkthrough and the pitfalls to avoid.
 EOF

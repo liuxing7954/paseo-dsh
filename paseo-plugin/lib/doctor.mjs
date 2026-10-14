@@ -171,6 +171,6 @@ function finish() {
   } else if (warns > 0) {
     process.stdout.write(`${YELLOW}${warns} warning(s)${RESET} — nothing blocking, but fix the above before relying on it.\n`);
   } else {
-    process.stdout.write(`${GREEN}All checks passed.${RESET} New a session in Paseo with provider "DeepSeek Harness (native)".\n`);
+    process.stdout.write(`${GREEN}All checks passed.${RESET} New a session in Paseo with provider "DeepSeek Harness".\n`);
   }
 }

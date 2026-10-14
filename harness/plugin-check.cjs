@@ -62,6 +62,17 @@ async function untilSince(start, predicate, label, ms = 120000) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+/** Like `untilSince`, but returns undefined instead of throwing on timeout. */
+async function maybeSince(start, predicate, ms = 30000) {
+  const started = Date.now();
+  while (Date.now() - started < ms) {
+    const hit = events.slice(start).find(predicate);
+    if (hit) return hit;
+    await sleep(120);
+  }
+  return undefined;
+}
+
 const results = [];
 const check = (name, pass, detail) => {
   results.push({ name, pass, detail });
@@ -236,6 +247,40 @@ const check = (name, pass, detail) => {
     );
   }
 
+  // 1b. context occupancy. The composer's window readout reads
+  // `contextWindowUsedTokens`/`contextWindowMaxTokens` off the same usage record
+  // DSH's own token meter feeds. A missing window is a silent regression — the
+  // meter simply never appears — so assert the fields travel on `session.usage`
+  // and that the occupancy is prompt-anchored rather than a running sum.
+  const withContext = usage.filter(
+    (e) =>
+      typeof e.usage?.contextWindowMaxTokens === "number" &&
+      typeof e.usage?.contextWindowUsedTokens === "number",
+  );
+  check(
+    "session.usage carries context occupancy (window + used)",
+    withContext.length > 0,
+    withContext.length > 0
+      ? JSON.stringify(withContext[withContext.length - 1].usage)
+      : `${usage.length} usage event(s), none carried a context window`,
+  );
+  if (withContext.length > 0) {
+    const latest = withContext[withContext.length - 1].usage;
+    check(
+      "context occupancy is bounded by the resolved window",
+      latest.contextWindowMaxTokens > 0 &&
+        latest.contextWindowUsedTokens >= 0 &&
+        latest.contextWindowUsedTokens <= latest.contextWindowMaxTokens,
+      `used=${latest.contextWindowUsedTokens} max=${latest.contextWindowMaxTokens}`,
+    );
+    check(
+      "occupancy covers the prompt instead of summing the log",
+      typeof latest.inputTokens !== "number" ||
+        latest.contextWindowUsedTokens >= latest.inputTokens,
+      `used=${latest.contextWindowUsedTokens} inputTokens=${latest.inputTokens}`,
+    );
+  }
+
   // 2. the image block reached the model layer
   //
   // A text-only route makes DSH replace the image with a note saying so, and
@@ -363,6 +408,22 @@ const check = (name, pass, detail) => {
     .slice(replayMark)
     .filter((e) => e.type === "timeline.item" && (e.item?.type === "user_message" || e.item?.type === "assistant_message"));
   check("reopen replays conversation history", replayed.length > 0, `${replayed.length} replayed item(s)`);
+
+  // 5b. A resumed session already carries DSH's stored context, so its
+  // occupancy must appear without waiting for a new turn — otherwise the
+  // readout stays blank on every reopen and after every daemon restart.
+  const reopenedUsage = await maybeSince(
+    replayMark,
+    (e) => e.type === "session.usage" &&
+      typeof e.usage?.contextWindowMaxTokens === "number" &&
+      typeof e.usage?.contextWindowUsedTokens === "number" &&
+      e.usage.contextWindowUsedTokens > 0,
+  );
+  check(
+    "reopen restores occupancy without a new turn",
+    reopenedUsage !== undefined,
+    JSON.stringify(reopenedUsage?.usage ?? {}),
+  );
 
   await conn.close();
 

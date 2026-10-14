@@ -412,6 +412,10 @@ class DshConnection implements ProviderConnection {
     });
     this.#emit({ type: "session.config", sessionId, config: session.configState() });
     this.#emit({ type: "session.ready", requestId: input.requestId, sessionId });
+    // A reopened session resumes DSH's stored context without a turn, so ask the
+    // runtime for its occupancy now; otherwise the readout stays empty until the
+    // next prompt even though the runtime already knows the numbers.
+    void session.refreshUsage();
   }
 
   #require(sessionId: string): DshSession {
@@ -435,7 +439,7 @@ class DshConnection implements ProviderConnection {
 export function createDshProvider(): ProviderRegistration {
   return {
     id: PROVIDER_ID,
-    label: "DeepSeek Harness (native)",
+    label: "DeepSeek Harness",
     icon: "icon.svg",
     async connect(request) {
       const capabilities = negotiateProviderCapabilities(request.capabilities, CAPABILITIES);
