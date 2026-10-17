@@ -11,7 +11,7 @@ import type {
   ProviderTimelineItem,
   ProviderToolCallDetail,
 } from "@getpaseo/plugin/server/provider";
-import type { JsonValue } from "@getpaseo/protocol/agent-types";
+import type { JsonValue } from "./json-value";
 
 interface DshEvent {
   type: string;

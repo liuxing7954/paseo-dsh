@@ -21,7 +21,7 @@ import type {
   ProviderToolCallDetail,
   ProviderUsage,
 } from "@getpaseo/plugin/server/provider";
-import type { JsonValue } from "@getpaseo/protocol/agent-types";
+import type { JsonValue } from "./json-value";
 import { DshProcess, type DshAnswer, type DshQuestion, type DshQuestionRequest, type DshRoute } from "./dsh-process";
 import { TimelineBuilder } from "./timeline";
 
