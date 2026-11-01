@@ -212,9 +212,9 @@ export class DshSession {
     if (this.#mode === "plan") {
       await process.setPlan(true);
     }
-    // A resumed session already carries DSH's stored context; publish its
-    // occupancy now so the readout is not blank until the next turn.
-    void this.refreshUsage();
+    // Occupancy is published later, after the agent exists: measuring it here
+    // creates the agent, and the preset this session was opened under has not
+    // been applied yet, so the session would be composed as the profile default.
   }
 
   /** The committed configuration Paseo renders in the composer. */

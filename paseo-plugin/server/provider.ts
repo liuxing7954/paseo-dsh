@@ -383,6 +383,9 @@ class DshConnection implements ProviderConnection {
       await session.loadCommands();
       await session.loadPermission();
       await session.loadPresets();
+      // The agent exists now (loadCommands created it under the preset chosen
+      // above), so measuring occupancy cannot race the preset any more.
+      void session.refreshUsage();
     } catch (error) {
       process.stderr.write(`[${PROVIDER_ID}] command catalog failed: ${messageOf(error)}\n`);
     }
