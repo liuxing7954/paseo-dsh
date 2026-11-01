@@ -315,9 +315,12 @@ export class DshSession {
     const info = await this.#require().presets();
     if (!info.available) return;
     this.#preset = info.current ?? info.default;
+    // A preset whose plugins failed to mount can still be listed. Mark it so the
+    // composer does not offer it as a working choice: selecting it would be
+    // rejected and silently snap back to the current preset.
     this.#presetOptions = info.presets.map((preset) => ({
       value: preset.id,
-      label: preset.name ?? preset.id,
+      label: `${preset.name ?? preset.id}${preset.broken === undefined ? "" : "（不可用）"}`,
     }));
   }
 
@@ -598,7 +601,16 @@ export class DshSession {
         const applied = await process.setConfig({ preset: requestedPreset });
         this.#preset = applied.preset ?? requestedPreset;
       } catch (error) {
-        this.#options.log(`preset change rejected: ${messageOf(error)}`);
+        const message = messageOf(error);
+        this.#options.log(`preset change rejected: ${message}`);
+        // Snapping back silently looks like the picker is broken. Say why on the
+        // timeline; the caller still re-emits the config with the real value.
+        this.#emitItem({
+          type: "notification",
+          id: `preset-error:${Date.now()}`,
+          level: "error",
+          message: `切换预设失败：${message}`,
+        });
       }
     }
 
