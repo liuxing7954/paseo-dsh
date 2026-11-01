@@ -161,6 +161,14 @@ export class DshSession {
   #preset: string | null = null;
   #presetOptions: Array<{ label: string; value: string }> = [];
   /**
+   * The preset the user picked, kept until DSH confirms it. Paseo can send the
+   * pick while the session is still opening, when the agent either does not
+   * exist yet or was just created under the profile default; applying it again
+   * before the first prompt is the last moment DSH accepts the switch.
+   */
+  #desiredPreset: string | null = null;
+  #presetPending = false;
+  /**
    * Last usage snapshot published to Paseo. Paseo replaces its whole usage
    * record on every `session.usage`, so token counts and context occupancy must
    * always travel together; this is the complete picture they are merged into.
@@ -430,6 +438,27 @@ export class DshSession {
     this.#clearLive();
     const process = this.#require();
 
+    // Last chance to land a preset that arrived while the session was opening:
+    // DSH locks the choice once this turn starts.
+    if (this.#presetPending && this.#desiredPreset !== null) {
+      const requested = this.#desiredPreset;
+      this.#desiredPreset = null;
+      this.#presetPending = false;
+      try {
+        const applied = await process.setConfig({ preset: requested });
+        this.#preset = applied.preset ?? requested;
+      } catch (error) {
+        const message = messageOf(error);
+        this.#options.log(`preset "${requested}" could not be applied: ${message}`);
+        this.#emitItem({
+          type: "notification",
+          id: `preset-error:${Date.now()}`,
+          level: "error",
+          message: `切换预设失败：${message}`,
+        });
+      }
+    }
+
     // A slash-menu pick arrives as a command, not a message. DSH commands and
     // skills share the menu but not the execution path, so branch on the kind
     // the catalog recorded rather than on the name.
@@ -597,9 +626,13 @@ export class DshSession {
       // A preset is a creation-time choice; DSH refuses the change once the
       // session's first turn has started. On refusal keep the real value and log
       // it — the caller re-emits config, so the composer snaps back.
+      this.#desiredPreset = requestedPreset;
+      this.#presetPending = true;
+      this.#options.log(`preset requested: ${requestedPreset}`);
       try {
         const applied = await process.setConfig({ preset: requestedPreset });
         this.#preset = applied.preset ?? requestedPreset;
+        this.#presetPending = false;
       } catch (error) {
         const message = messageOf(error);
         this.#options.log(`preset change rejected: ${message}`);
