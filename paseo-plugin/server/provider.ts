@@ -338,6 +338,12 @@ class DshConnection implements ProviderConnection {
       isRecord(nativeId) && typeof nativeId["sessionId"] === "string" ? nativeId["sessionId"] : sessionId;
 
     const route = parseRoute(config.model, display.fallbackRoute);
+    const settings = config.settings ?? {};
+    // Carry the preset into `open()` so the process can queue it before the agent
+    // exists: that is what puts the right id in the session header, instead of
+    // writing the profile default first and correcting it afterwards.
+    const initialPreset =
+      typeof settings["preset"] === "string" && settings["preset"] !== "" ? settings["preset"] : undefined;
     const session = new DshSession({
       sessionId,
       dshSessionId,
@@ -345,6 +351,7 @@ class DshConnection implements ProviderConnection {
       env: config.env ?? {},
       route,
       mode: config.mode ?? "build",
+      ...(initialPreset === undefined ? {} : { initialPreset }),
       models: display.models,
       thinkingOptions: display.thinkingOptions,
       emit: (event) => this.#emit(event),
@@ -360,14 +367,12 @@ class DshConnection implements ProviderConnection {
       await session.configure({ thinkingOption: config.thinkingOption });
     }
 
-    const settings = config.settings ?? {};
-    // The agent preset is a creation-time choice: apply it BEFORE the agent is
-    // created (loadCommands creates it) so the session is born under the chosen
-    // preset. DSH locks the preset after the session's first turn, so applying it
-    // after `session.ready` would already be too late — the pick would snap back
-    // to the profile default.
+    // The preset already reached the process before `initialize` (see
+    // `initialPreset` above), so this only covers a choice that lands later — a
+    // resumed session or a pick made while the session was still opening. The
+    // bridge keeps its own queued-preset fallback for the same reason.
     const preset = settings["preset"];
-    if (typeof preset === "string" && preset !== "") {
+    if (typeof preset === "string" && preset !== "" && preset !== initialPreset) {
       try {
         await session.configure({ settings: { preset } });
       } catch (error) {

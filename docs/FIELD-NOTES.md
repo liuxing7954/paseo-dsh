@@ -372,6 +372,22 @@ peer/dev 依赖。这样 `requirements.paseo: ">=0.9.2"` 才名副其实。
 > 实测（桌面端，13px 页脚）：最新回合与"被顶下去"两种状态都收敛到 4.5px 的视觉间距，
 > 顶下去的那一刻最多有约 100ms 的过渡。
 
+### 26. 预设在建会话时丢失，会话头永远停在 standard
+
+**症状**：新建会话前就选好了预设，聊天行为有时对有时不对；`meta.agentPreset` 却一直是 `standard`。
+
+**根因**：Paseo 的预设选项是会话级的——`session.open` 时 `settings` 还是空的，选中值在 open 之后才通过
+`setFeature` 发过来。插件此时已经在 `loadCommands()` 里创建了 agent，桥接层只能把预设放进队列；
+如果 `createSession` 已经按默认值 resolve 完，这个队列就永远不会被消费。会话打开时那次 usage
+探测（`getOrCreateSession`）还会让 agent 创建得更早，把窗口拉大。
+
+**修法**：把预设随 open 传给 `DshProcess`，在 `initialize` **之前**用 `paseo/config/set` 排队；桥接层的
+`createSession` 会 resolve 这个队列，agent 以该预设创建，会话头记录正确值。迟到的选择仍由
+`select` 和"首条消息前补应用"兜底。
+
+> **教训**：**只在创建时才知道的元数据，必须在创建动作之前送到**。事后再 select 只能改运行状态，
+> 改不了会话头；而排队的值如果错过了消费点，就是静默丢失。
+
 ---
 
 ## 已知限制（未修，有意为之）

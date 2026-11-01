@@ -56,6 +56,12 @@ export interface DshSessionOptions {
   env: Record<string, string>;
   route: DshRoute;
   mode: string;
+  /**
+   * Agent preset this session should be created under. Applied inside `open()`,
+   * before `initialize`, so the agent is composed with it — the only moment DSH
+   * both accepts the choice and writes it into the session header.
+   */
+  initialPreset?: string;
   /** Models Paseo can switch to for this session, from the cached catalog. */
   models: ProviderModel[];
   /** Thinking options the catalog advertises. */
@@ -194,6 +200,7 @@ export class DshSession {
       cwd: this.#options.cwd,
       route: this.#route,
       sessionId: this.#dshSessionId,
+      ...(this.#options.initialPreset === undefined ? {} : { preset: this.#options.initialPreset }),
       env: this.#options.env,
       onEvent: (payload) => this.#onSessionEvent(payload),
       onAssistantStream: (frame) => this.#onAssistantStream(frame),

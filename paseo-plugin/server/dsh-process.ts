@@ -125,6 +125,15 @@ export interface DshProcessOptions extends DshProcessHandlers {
   cwd: string;
   route: DshRoute;
   sessionId: string;
+  /**
+   * Agent preset to run this session under, queued before `initialize`.
+   *
+   * DSH records the preset in the session header when the agent is created and
+   * refuses to change it afterwards, so a pick applied after the agent exists is
+   * both late and invisible: the header keeps the old value. Queueing it first
+   * makes the bridge create the session with the right preset, not just run it.
+   */
+  preset?: string;
   /** Extra environment for the child; merged over the daemon's environment. */
   env?: Record<string, string>;
   /**
@@ -208,6 +217,18 @@ export class DshProcess {
     });
 
     if (this.#options.initializeRoute === false) return;
+
+    // Queue the agent preset while no session exists yet. The bridge parks it and
+    // resolves it inside `createSession`, so the agent is born under it and the
+    // session header records the right value. Sent before `initialize` because
+    // that call is what makes the runtime usable; the preset must be known before
+    // anything can create the agent.
+    if (this.#options.preset !== undefined) {
+      await this.#request("paseo/config/set", {
+        sessionId: this.#options.sessionId,
+        preset: this.#options.preset,
+      });
+    }
 
     await this.#request("initialize", {
       cwd: this.#options.cwd,
