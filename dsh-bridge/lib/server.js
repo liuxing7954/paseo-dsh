@@ -923,10 +923,12 @@ export class PaseoHarnessServer {
     // before, so preset support stays opt-in.
     const presets = this.ctx.get('agentPresets');
     let agentPreset;
+    let composedPreset;
     let setup = installSelection;
     if (presets !== undefined) {
       const resolvedId = (await presets.resolve(this.pendingPresets.get(sessionId))).id;
       agentPreset = resolvedId;
+      composedPreset = resolvedId;
       setup = async (agentCtx, agent) => {
         installSelection(agentCtx);
         await presets.mount(agentCtx, resolvedId);
@@ -964,6 +966,7 @@ export class PaseoHarnessServer {
           storedPreset = undefined;
         }
         const resolvedId = (await presets.resolve(storedPreset ?? this.pendingPresets.get(sessionId))).id;
+        composedPreset = resolvedId;
         resumeSetup = async (agentCtx) => {
           installSelection(agentCtx);
           await presets.mount(agentCtx, resolvedId);
@@ -978,6 +981,19 @@ export class PaseoHarnessServer {
     const rec = { handle, control };
     this.controls.set(sessionId, control);
     this.sessions.set(sessionId, rec);
+    // A preset can be chosen while the agent was being created: setPreset saw no
+    // session and queued it, but createSession had already resolved the default.
+    // Apply the queued choice now, before the first turn locks composition.
+    const queuedPreset = this.pendingPresets.get(sessionId);
+    if (presets !== undefined && queuedPreset !== undefined && queuedPreset !== composedPreset) {
+      try {
+        await presets.select(handle.agent, queuedPreset);
+      } catch (error) {
+        process.stderr.write(
+          `[bridge] queued preset "${queuedPreset}" could not be applied: ${String(error?.message ?? error)}\n`,
+        );
+      }
+    }
     if (this.pendingPlanMode) {
       const planMode = this.ctx.get('planMode');
       if (planMode !== undefined) planMode.set(handle.agent, true);
