@@ -130,10 +130,14 @@ const check = (name, pass, detail) => {
     `${catalogEvent.catalog?.models?.length ?? 0} model(s)`,
   );
 
+  // The profile's fallback route may point at a provider this machine has no
+  // key for. Let the caller name a working catalog model without editing the
+  // harness: PASEO_CHECK_MODEL=provider/model node plugin-check.cjs
+  const checkModel = process.env.PASEO_CHECK_MODEL;
   await conn.send({
     type: "session.open",
     sessionId: `check-${Date.now()}`,
-    config: { cwd: process.cwd(), mode: "build" },
+    config: { cwd: process.cwd(), mode: "build", ...(checkModel === undefined ? {} : { model: checkModel }) },
   });
   const ready = await until((e) => e.type === "session.ready", "session.ready");
   const sessionId = ready.sessionId;
