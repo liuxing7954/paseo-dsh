@@ -45,6 +45,10 @@ const CAPABILITIES = [
   // session" lists providers that support this). Implemented over the session
   // log below.
   "session.list",
+  // DSH 0.2.2 runs subagents as child sessions. Advertising this lets Paseo
+  // accept a `session.opened` whose parentSessionId points at this session;
+  // without it the server rejects the child outright.
+  "session.subsession",
   "permission",
 ] as const;
 
@@ -354,6 +358,7 @@ class DshConnection implements ProviderConnection {
       ...(initialPreset === undefined ? {} : { initialPreset }),
       models: display.models,
       thinkingOptions: display.thinkingOptions,
+      capabilities: this.capabilities,
       emit: (event) => this.#emit(event),
       log: (line) => {
         process.stderr.write(`[${PROVIDER_ID}] ${line}\n`);

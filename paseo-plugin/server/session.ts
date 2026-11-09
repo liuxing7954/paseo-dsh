@@ -30,6 +30,8 @@ import {
   type DshQuestionRequest,
   type DshAssistantFrame,
   type DshRoute,
+  type DshSessionEvent,
+  type DshStatusEvent,
   type DshUsage,
 } from "./dsh-process";
 import { TimelineBuilder } from "./timeline";
@@ -66,6 +68,11 @@ export interface DshSessionOptions {
   models: ProviderModel[];
   /** Thinking options the catalog advertises. */
   thinkingOptions: ProviderThinkingOption[];
+  /**
+   * Capabilities negotiated for the parent session. Child sessions opened by
+   * DSH subagents must advertise the same set so Paseo accepts them.
+   */
+  capabilities: readonly string[];
   emit(event: ProviderEvent): void;
   log(line: string): void;
 }
@@ -76,6 +83,18 @@ function messageOf(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** Tool-call arguments arrive as a JSON string in the durable session log. */
+function parseToolArguments(raw: unknown): Record<string, unknown> {
+  if (isRecord(raw)) return raw;
+  if (typeof raw !== "string" || raw.trim() === "") return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 /** Concatenate the text blocks of a DSH message's content. */
@@ -96,12 +115,35 @@ export function parseRoute(model: string | undefined, fallback: DshRoute): DshRo
   return { provider: model.slice(0, slash), model: model.slice(slash + 1) };
 }
 
+/** One DSH subagent child session observed through the bridge. */
+interface ChildSessionState {
+  id: string;
+  timeline: TimelineBuilder;
+  cwd: string;
+  title?: string;
+  /** Parent tool call that spawned this child, once its result reveals it. */
+  toolCallId?: string;
+  opened: boolean;
+  turnId: string | null;
+  /** A terminal turn state was already reported for the current turn. */
+  finished: boolean;
+  /** Events seen before Paseo accepted the child session. */
+  pending: Array<{ kind: "event"; payload: DshSessionEvent } | { kind: "status"; status: string }>;
+  openTimer?: ReturnType<typeof setTimeout>;
+}
+
 export class DshSession {
   readonly id: string;
   /** DSH's session id (see {@link DshSessionOptions.dshSessionId}). */
   readonly #dshSessionId: string;
   readonly #options: DshSessionOptions;
   readonly #timeline = new TimelineBuilder();
+  /** DSH subagent child sessions, keyed by their own DSH session id. */
+  #children = new Map<string, ChildSessionState>();
+  /** Parent subagent tool calls waiting for their `started subagent <id>` result. */
+  #pendingSubagentCalls = new Map<string, { description?: string }>();
+  #childTurnSeq = 0;
+  #warnedNoSubsession = false;
   #process: DshProcess | undefined;
   #route: DshRoute;
   #mode: string;
@@ -163,6 +205,8 @@ export class DshSession {
   /** Current DSH permission preset name, and the ones it can switch to. */
   #permission: string | null = null;
   #permissionPresets: string[] = [];
+  /** DSH's display name for each preset value, when the bridge reports one. */
+  #permissionLabels = new Map<string, string>();
   /** Current agent preset (persona + capabilities), and the switchable ones. */
   #preset: string | null = null;
   #presetOptions: Array<{ label: string; value: string }> = [];
@@ -204,7 +248,7 @@ export class DshSession {
       env: this.#options.env,
       onEvent: (payload) => this.#onSessionEvent(payload),
       onAssistantStream: (frame) => this.#onAssistantStream(frame),
-      onStatus: (status) => this.#onStatus(status),
+      onStatus: (payload) => this.#onStatus(payload),
       onQuestion: (request) => this.#onQuestion(request),
       onLog: (line) => this.#options.log(line),
       onExit: (code, signal) => {
@@ -257,7 +301,10 @@ export class DshSession {
         label: "Permissions",
         description: "DSH sandbox + approval preset for this session.",
         value: this.#permission,
-        options: this.#permissionPresets.map((name) => ({ label: name, value: name })),
+        options: this.#permissionPresets.map((name) => ({
+          label: permissionPresetLabel(name, this.#permissionLabels.get(name)),
+          value: name,
+        })),
       });
     }
     const thinkingOptions = this.#thinking();
@@ -320,6 +367,9 @@ export class DshSession {
     if (!permission.available) return;
     this.#permission = permission.current;
     this.#permissionPresets = permission.presets;
+    this.#permissionLabels = new Map(
+      (permission.presetDetails ?? []).map((preset) => [preset.value, preset.name]),
+    );
   }
 
   /**
@@ -684,6 +734,14 @@ export class DshSession {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#usageRefreshTimer);
+    for (const child of this.#children.values()) {
+      if (child.openTimer !== undefined) clearTimeout(child.openTimer);
+      if (child.opened) {
+        this.#options.emit({ type: "session.closed", sessionId: child.id });
+      }
+    }
+    this.#children.clear();
+    this.#pendingSubagentCalls.clear();
     this.#flushLive();
     this.#clearLive();
     await this.#process?.shutdown();
@@ -696,8 +754,12 @@ export class DshSession {
     return this.#process;
   }
 
-  #onStatus(status: string): void {
-    if (status === "running") {
+  #onStatus(payload: DshStatusEvent): void {
+    if (payload.sessionId !== this.#dshSessionId) {
+      this.#onChildStatus(payload);
+      return;
+    }
+    if (payload.status === "running") {
       if (this.#turnId === null) {
         this.#toolStarts.clear();
         this.#turnTool = { count: 0, ms: 0 };
@@ -711,6 +773,223 @@ export class DshSession {
       return;
     }
     this.#completeTurn();
+  }
+
+  /**
+   * Find or create the local view of a child session.
+   *
+   * A session is only treated as a child when its header names this session as
+   * the parent *and* marks it as a subagent. In DSH 0.2.1 `parentSession` also
+   * records ordinary fork lineage, so the parent link alone is not enough.
+   */
+  #ensureChild(meta: {
+    sessionId: string;
+    parentSessionId?: string;
+    origin?: string;
+    cwd?: string;
+  }): ChildSessionState | undefined {
+    if (!this.#options.capabilities.includes("session.subsession")) {
+      if (!this.#warnedNoSubsession) {
+        this.#warnedNoSubsession = true;
+        this.#options.log(
+          "Paseo host did not negotiate session.subsession; DSH subagent child sessions stay hidden",
+        );
+      }
+      return undefined;
+    }
+    const existing = this.#children.get(meta.sessionId);
+    if (existing !== undefined) {
+      if (meta.cwd !== undefined) existing.cwd = meta.cwd;
+      return existing;
+    }
+    if (meta.parentSessionId !== this.#dshSessionId || meta.origin !== "subagent") return undefined;
+    const child: ChildSessionState = {
+      id: meta.sessionId,
+      timeline: new TimelineBuilder(),
+      cwd: meta.cwd ?? this.#options.cwd,
+      opened: false,
+      turnId: null,
+      finished: false,
+      pending: [],
+    };
+    this.#children.set(meta.sessionId, child);
+    return child;
+  }
+
+  #onChildSessionEvent(payload: DshSessionEvent): void {
+    const child = this.#ensureChild(payload);
+    if (child === undefined) return;
+    const event = payload.event;
+    if (event.type === "subagent/descriptor") {
+      const data = isRecord(event.data) ? event.data : {};
+      const title =
+        typeof data.label === "string"
+          ? data.label
+          : typeof data.description === "string"
+            ? data.description
+            : undefined;
+      if (title !== undefined && child.title === undefined) child.title = title;
+    }
+    if (!child.opened) {
+      child.pending.push({ kind: "event", payload });
+      this.#scheduleChildOpen(child);
+      return;
+    }
+    this.#applyChildEvent(child, payload);
+  }
+
+  #onChildStatus(payload: DshStatusEvent): void {
+    const child = this.#ensureChild(payload);
+    if (child === undefined) return;
+    if (!child.opened) {
+      child.pending.push({ kind: "status", status: payload.status });
+      this.#scheduleChildOpen(child);
+      return;
+    }
+    this.#applyChildStatus(child, payload.status);
+  }
+
+  #scheduleChildOpen(child: ChildSessionState): void {
+    if (child.openTimer !== undefined) return;
+    // The parent's tool result normally arrives immediately and tells us which
+    // parent tool call to link. If it never does, opening the child without a
+    // toolCallId still beats hiding it from Paseo entirely.
+    child.openTimer = setTimeout(() => {
+      child.openTimer = undefined;
+      this.#tryOpenChild(child);
+    }, 1500);
+    child.openTimer.unref?.();
+  }
+
+  #tryOpenChild(child: ChildSessionState): void {
+    if (child.opened) return;
+    // A subagent tool is in flight. Wait for its result to learn the call id,
+    // unless the fallback timer has already fired and cleared that wait.
+    if (child.toolCallId === undefined && this.#pendingSubagentCalls.size > 0 && child.openTimer !== undefined) {
+      return;
+    }
+    this.#openChild(child);
+  }
+
+  #openChild(child: ChildSessionState): void {
+    if (child.opened || this.#closed) return;
+    child.opened = true;
+    if (child.openTimer !== undefined) {
+      clearTimeout(child.openTimer);
+      child.openTimer = undefined;
+    }
+    this.#options.emit({
+      type: "session.opened",
+      sessionId: child.id,
+      parentSessionId: this.id,
+      ...(child.toolCallId === undefined ? {} : { toolCallId: child.toolCallId }),
+      // These are the capabilities the host actually negotiated for this
+      // connection. Advertising the static CAPABILITIES list here would make
+      // Paseo reject the child before it is attached.
+      capabilities: [...this.#options.capabilities],
+      restoration: "parent",
+      cwd: child.cwd,
+      ...(child.title === undefined ? {} : { title: child.title, description: child.title }),
+    });
+    const pending = child.pending;
+    child.pending = [];
+    for (const item of pending) {
+      if (item.kind === "event") this.#applyChildEvent(child, item.payload);
+      else this.#applyChildStatus(child, item.status);
+    }
+  }
+
+  #applyChildEvent(child: ChildSessionState, payload: DshSessionEvent): void {
+    const event = payload.event;
+    const data = isRecord(event.data) ? event.data : {};
+    if (event.type === "turn/start") {
+      this.#startChildTurn(child);
+    }
+    for (const item of child.timeline.consume(event)) {
+      this.#options.emit({ type: "timeline.item", sessionId: child.id, item });
+    }
+    if (event.type === "turn/end") {
+      const reason = isRecord(data.reason) ? data.reason : undefined;
+      const kind = typeof data.reason === "string" ? data.reason : reason?.kind;
+      const state = kind === "error" || kind === "failed" ? "failed" : kind === "canceled" ? "canceled" : "completed";
+      const error = isRecord(reason?.error) ? reason.error : undefined;
+      const message = typeof error?.message === "string" ? error.message : undefined;
+      this.#finishChildTurn(child, state, message);
+    }
+  }
+
+  #applyChildStatus(child: ChildSessionState, status: string): void {
+    if (status === "running") {
+      this.#startChildTurn(child);
+      return;
+    }
+    const state =
+      status === "failed" || status === "error"
+        ? "failed"
+        : status === "canceled" || status === "cancelled"
+          ? "canceled"
+          : "completed";
+    this.#finishChildTurn(child, state);
+  }
+
+  #startChildTurn(child: ChildSessionState): void {
+    if (child.turnId !== null) return;
+    this.#childTurnSeq += 1;
+    const turnId = `child:${child.id}:${this.#childTurnSeq}`;
+    child.turnId = turnId;
+    child.finished = false;
+    this.#options.emit({ type: "session.turn", sessionId: child.id, turnId, state: "started" });
+  }
+
+  #finishChildTurn(
+    child: ChildSessionState,
+    state: "completed" | "failed" | "canceled",
+    message?: string,
+  ): void {
+    // `turn/end` is normally followed by an idle status; only the first one
+    // should produce a terminal turn event.
+    if (child.finished) return;
+    child.finished = true;
+    // A child can be opened after its turn already ended (late bridge event or
+    // replay). Still report the terminal state so Paseo does not leave the
+    // subagent stuck on "running".
+    this.#childTurnSeq += 1;
+    const turnId = child.turnId ?? `child:${child.id}:${this.#childTurnSeq}`;
+    child.turnId = null;
+    this.#options.emit({
+      type: "session.turn",
+      sessionId: child.id,
+      turnId,
+      state,
+      ...(message === undefined ? {} : { error: { message } }),
+    });
+  }
+
+  /** Link a parent subagent tool result (`started subagent <id>`) to its child. */
+  #trackSubagentResult(callId: string, message: unknown): void {
+    const output = isRecord(message) ? textBlocks(message.content) : "";
+    const match = /^\s*started subagent ([A-Za-z0-9][A-Za-z0-9_-]*)\s*$/.exec(output);
+    const pending = this.#pendingSubagentCalls.get(callId);
+    this.#pendingSubagentCalls.delete(callId);
+    if (match === null) {
+      if (this.#pendingSubagentCalls.size === 0) {
+        for (const child of this.#children.values()) {
+          if (!child.opened && child.toolCallId === undefined) this.#tryOpenChild(child);
+        }
+      }
+      return;
+    }
+    const child = this.#ensureChild({
+      sessionId: match[1],
+      parentSessionId: this.#dshSessionId,
+      origin: "subagent",
+    });
+    if (child === undefined) return;
+    child.toolCallId = callId;
+    // The child's own descriptor label is authoritative; fall back to the
+    // parent tool description when it did not publish one.
+    if (child.title === undefined && pending?.description !== undefined) child.title = pending.description;
+    this.#tryOpenChild(child);
   }
 
   /** Mark the current turn completed once its text is fully visible. */
@@ -733,7 +1012,13 @@ export class DshSession {
     }
   }
 
-  #onSessionEvent(payload: { event: { type: string; [key: string]: unknown } }): void {
+  #onSessionEvent(payload: DshSessionEvent): void {
+    const sessionId =
+      typeof payload.sessionId === "string" ? payload.sessionId : this.#dshSessionId;
+    if (sessionId !== this.#dshSessionId) {
+      this.#onChildSessionEvent({ ...payload, sessionId });
+      return;
+    }
     const event = payload.event;
     // The model can leave plan mode on its own, for example by submitting a plan
     // for approval. Mirror that into the composer's mode selection so the toggle
@@ -895,7 +1180,15 @@ export class DshSession {
     const data = isRecord(event.data) ? event.data : {};
     if (event.type === "tool/call") {
       const callId = typeof data.callId === "string" ? data.callId : undefined;
-      if (callId !== undefined) this.#toolStarts.set(callId, Date.now());
+      if (callId !== undefined) {
+        this.#toolStarts.set(callId, Date.now());
+        if (data.name === "subagent") {
+          const input = parseToolArguments(data.arguments);
+          this.#pendingSubagentCalls.set(callId, {
+            ...(typeof input.description === "string" ? { description: input.description } : {}),
+          });
+        }
+      }
       return;
     }
     const message = isRecord(data.message) ? data.message : undefined;
@@ -906,6 +1199,7 @@ export class DshSession {
           ? message.toolCallId
           : undefined;
     if (callId === undefined) return;
+    if (this.#pendingSubagentCalls.has(callId)) this.#trackSubagentResult(callId, message);
     const startedAt = this.#toolStarts.get(callId);
     if (startedAt === undefined) return;
     this.#toolStarts.delete(callId);
@@ -1177,6 +1471,34 @@ function toDshContent(block: ProviderContent): Record<string, unknown> {
     type: "text",
     text: `Attached ${block.type.replace(/_/g, " ")}: ${heading}${url}${body}`,
   };
+}
+
+/**
+ * Paseo's select carries a single label per option, so use DSH's product name
+ * instead of the machine value. These three are DSH's built-in labels; custom
+ * profiles keep their own name, and kebab-case names are title-cased the same
+ * way DSH's own client does it.
+ */
+function permissionPresetLabel(value: string, name?: string): string {
+  const builtIn: Record<string, string> = {
+    "read-only": "Read Only",
+    "workspace-write": "Workspace Write",
+    "danger-full-access": "Full access",
+    "auto": "Auto review",
+    "custom": "Custom",
+  };
+  const product = builtIn[value];
+  if (product !== undefined && (name === undefined || name === value || name === product)) {
+    return product;
+  }
+  const display = name ?? value;
+  if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(display)) {
+    return display
+      .split("-")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+  return display;
 }
 
 /**

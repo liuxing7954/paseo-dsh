@@ -93,6 +93,24 @@ function withTimeout(promise, ms, label) {
 }
 
 /**
+ * Identity fields every session notification carries.
+ *
+ * DSH 0.2.2 creates subagents as real child sessions. Their header is the only
+ * stable place to learn that a session is a child and who its parent is, so
+ * forward it instead of making the plugin guess from event contents.
+ */
+function sessionEnvelope(session, extra = {}) {
+  const header = session.header ?? {};
+  return {
+    sessionId: String(session.id),
+    ...(header.parentSession === undefined ? {} : { parentSessionId: String(header.parentSession) }),
+    ...(header.origin === undefined ? {} : { origin: header.origin }),
+    ...(typeof header.cwd === 'string' ? { cwd: header.cwd } : {}),
+    ...extra,
+  };
+}
+
+/**
  * Reduce one DSH live assistant-stream frame to the part Paseo can render.
  *
  * Only visible text deltas are forwarded. Reasoning and tool-call deltas keep
@@ -183,12 +201,12 @@ export class PaseoHarnessServer {
 
     this.disposers.push(
       ctx.on('session/event', (session, event) => {
-        this.transport.notify('session.event', { sessionId: String(session.id), event });
+        this.transport.notify('session.event', sessionEnvelope(session, { event }));
       }),
     );
     this.disposers.push(
       ctx.on('agent/status', ({ agent, status }) => {
-        this.transport.notify('session.status', { sessionId: String(agent.session.id), status });
+        this.transport.notify('session.status', sessionEnvelope(agent.session, { status }));
       }),
     );
     // Live token deltas. The durable log only carries one complete message per
@@ -618,10 +636,22 @@ export class PaseoHarnessServer {
     if (service === undefined) return { available: false, current: null, presets: [] };
     const rec = await this.getOrCreateSession(params.sessionId);
     this.assertLiveAgent(rec, params.sessionId);
+    const presets = [...service.names];
     return {
       available: true,
       current: service.current(rec.handle.agent.session),
-      presets: [...service.names],
+      presets,
+      // Paseo's select only renders a label, so carry DSH's own display name
+      // alongside the machine value. `presets` stays untouched for older
+      // plugins that only know the names.
+      presetDetails: presets.map((name) => {
+        const option = service.optionOf(name);
+        return {
+          value: name,
+          name: option.name,
+          ...(option.description === undefined ? {} : { description: option.description }),
+        };
+      }),
     };
   }
 

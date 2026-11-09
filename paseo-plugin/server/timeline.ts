@@ -47,6 +47,11 @@ function stringField(source: Record<string, unknown>, key: string): string | und
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+/** DSH returns `started subagent <childId>` when a subagent starts. */
+function childSessionIdOf(output: string | undefined): string | undefined {
+  return output?.match(/^\s*started subagent ([A-Za-z0-9][A-Za-z0-9_-]*)\s*$/)?.[1];
+}
+
 /** Map one DSH tool call onto the richest Paseo tool detail available. */
 function toolDetail(name: string, input: Record<string, unknown>, output?: string): ProviderToolCallDetail {
   const filePath = stringField(input, "file_path") ?? stringField(input, "filePath");
@@ -112,14 +117,18 @@ function toolDetail(name: string, input: Record<string, unknown>, output?: strin
       // emits the same item next to the approval buttons. The plan has to be
       // visible *before* the choice, so this is the copy that carries it.
       return { type: "plan", text: stringField(input, "plan") ?? "" };
-    case "subagent":
+    case "subagent": {
+      const childSessionId = childSessionIdOf(output);
       return {
         type: "sub_agent",
+        subAgentType: "Sub-agent",
         ...(stringField(input, "description") === undefined
           ? {}
           : { description: stringField(input, "description") as string }),
+        ...(childSessionId === undefined ? {} : { childSessionId }),
         log: output ?? "",
       };
+    }
     default:
       return {
         type: "unknown",
@@ -129,17 +138,37 @@ function toolDetail(name: string, input: Record<string, unknown>, output?: strin
   }
 }
 
-/** Extract `todo_write` items into Paseo's native todo row. */
-function todoItems(input: Record<string, unknown>): Array<{ text: string; completed: boolean }> | null {
+type TodoStatus = "pending" | "in_progress" | "completed";
+
+/**
+ * Extract `todo_write` items into Paseo's native todo row.
+ *
+ * Paseo decides between pending, in progress and completed from `status`; the
+ * older `completed` boolean alone makes every unfinished task look pending.
+ */
+function todoItems(
+  input: Record<string, unknown>,
+): Array<{ text: string; completed: boolean; status: TodoStatus; activeForm?: string }> | null {
   const raw = input.todos;
   if (!Array.isArray(raw)) return null;
   const items = raw
     .filter(isRecord)
-    .map((todo) => ({
-      text:
-        stringField(todo, "content") ?? stringField(todo, "text") ?? stringField(todo, "activeForm") ?? "",
-      completed: todo.status === "completed",
-    }))
+    .map((todo) => {
+      const status: TodoStatus =
+        todo.status === "completed"
+          ? "completed"
+          : todo.status === "in_progress"
+            ? "in_progress"
+            : "pending";
+      const activeForm = stringField(todo, "activeForm");
+      return {
+        text:
+          stringField(todo, "content") ?? stringField(todo, "text") ?? activeForm ?? "",
+        completed: status === "completed",
+        status,
+        ...(activeForm === undefined ? {} : { activeForm }),
+      };
+    })
     .filter((todo) => todo.text !== "");
   return items.length === 0 ? null : items;
 }
