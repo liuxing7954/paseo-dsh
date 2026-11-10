@@ -43,7 +43,21 @@ export interface DshQuestionRequest {
 /** A `session.event` payload's outer envelope. */
 export interface DshSessionEvent {
   sessionId: string;
+  /** Present when the session is a DSH subagent child. */
+  parentSessionId?: string;
+  origin?: string;
+  cwd?: string;
   event: { type: string; [key: string]: unknown };
+}
+
+/** A `session.status` payload's outer envelope. */
+export interface DshStatusEvent {
+  sessionId: string;
+  status: string;
+  /** Present when the status belongs to a DSH subagent child. */
+  parentSessionId?: string;
+  origin?: string;
+  cwd?: string;
 }
 
 /** One model the runtime advertises, with its adapter-owned reasoning efforts. */
@@ -114,7 +128,7 @@ export interface DshAssistantFrame {
 export interface DshProcessHandlers {
   onEvent(payload: DshSessionEvent): void;
   onAssistantStream?(frame: DshAssistantFrame): void;
-  onStatus(status: string): void;
+  onStatus(payload: DshStatusEvent): void;
   onQuestion(request: DshQuestionRequest): Promise<DshAnswer>;
   onLog(line: string): void;
   onExit(code: number | null, signal: string | null): void;
@@ -265,10 +279,20 @@ export class DshProcess {
   }
 
   /** Read the session's current permission preset and the switchable ones. */
-  async permission(): Promise<{ available: boolean; current: string | null; presets: string[] }> {
+  async permission(): Promise<{
+    available: boolean;
+    current: string | null;
+    presets: string[];
+    presetDetails?: Array<{ value: string; name: string; description?: string }>;
+  }> {
     return (await this.#request("paseo/permission", {
       sessionId: this.#options.sessionId,
-    })) as { available: boolean; current: string | null; presets: string[] };
+    })) as {
+      available: boolean;
+      current: string | null;
+      presets: string[];
+      presetDetails?: Array<{ value: string; name: string; description?: string }>;
+    };
   }
 
   /**
@@ -471,8 +495,16 @@ export class DshProcess {
       return;
     }
     if (method === "session.status") {
-      const params = frame.params as { status?: string } | undefined;
-      this.#options.onStatus(params?.status ?? "unknown");
+      const params = frame.params as
+        | { sessionId?: string; status?: string; parentSessionId?: string; origin?: string; cwd?: string }
+        | undefined;
+      this.#options.onStatus({
+        sessionId: params?.sessionId ?? this.#options.sessionId,
+        status: params?.status ?? "unknown",
+        ...(params?.parentSessionId === undefined ? {} : { parentSessionId: params.parentSessionId }),
+        ...(params?.origin === undefined ? {} : { origin: params.origin }),
+        ...(params?.cwd === undefined ? {} : { cwd: params.cwd }),
+      });
       return;
     }
     if (method === "assistant.stream") {

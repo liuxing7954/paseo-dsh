@@ -92,6 +92,7 @@ const check = (name, pass, detail) => {
       "session.configure",
       "session.persistence",
       "session.list",
+      "session.subsession",
       "permission",
     ],
   });
@@ -105,6 +106,11 @@ const check = (name, pass, detail) => {
   check(
     "provider declares prompt.command",
     Array.isArray(conn.capabilities) && conn.capabilities.includes("prompt.command"),
+    `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
+  );
+  check(
+    "provider negotiates session.subsession (child sessions)",
+    Array.isArray(conn.capabilities) && conn.capabilities.includes("session.subsession"),
     `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
   );
   check(
@@ -124,10 +130,14 @@ const check = (name, pass, detail) => {
     `${catalogEvent.catalog?.models?.length ?? 0} model(s)`,
   );
 
+  // The profile's fallback route may point at a provider this machine has no
+  // key for. Let the caller name a working catalog model without editing the
+  // harness: PASEO_CHECK_MODEL=provider/model node plugin-check.cjs
+  const checkModel = process.env.PASEO_CHECK_MODEL;
   await conn.send({
     type: "session.open",
     sessionId: `check-${Date.now()}`,
-    config: { cwd: process.cwd(), mode: "build" },
+    config: { cwd: process.cwd(), mode: "build", ...(checkModel === undefined ? {} : { model: checkModel }) },
   });
   const ready = await until((e) => e.type === "session.ready", "session.ready");
   const sessionId = ready.sessionId;
@@ -137,6 +147,11 @@ const check = (name, pass, detail) => {
   // session id its decoder rejects on reopen ("Invalid plugin provider
   // persistence handle"), leaving a reload-orphaned session unrecoverable.
   const opened = events.find((e) => e.type === "session.opened");
+  check(
+    "session.opened advertises session.subsession",
+    opened !== undefined && Array.isArray(opened.capabilities) && opened.capabilities.includes("session.subsession"),
+    `capabilities=[${(opened?.capabilities ?? []).join(", ")}]`,
+  );
   check(
     "session.opened carries a persistence handle",
     opened !== undefined && typeof opened.persistence?.version === "number",
@@ -181,6 +196,16 @@ const check = (name, pass, detail) => {
     permissionSetting
       ? `options=[${(permissionSetting.options ?? []).map((o) => o.value).join(", ")}]`
       : "(no permission setting)",
+  );
+  const permissionLabels = new Map(
+    (permissionSetting?.options ?? []).map((o) => [o.value, o.label]),
+  );
+  check(
+    "→ permission labels use DSH display names",
+    permissionLabels.get("danger-full-access") === "Full access" &&
+      permissionLabels.get("workspace-write") === "Workspace Write" &&
+      (permissionSetting?.options ?? []).every((o) => o.label !== o.value),
+    `labels=[${[...permissionLabels.values()].join(", ")}]`,
   );
   await conn.send({
     type: "session.configure",
