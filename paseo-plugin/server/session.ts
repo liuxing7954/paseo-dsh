@@ -911,7 +911,13 @@ export class DshSession {
     if (event.type === "turn/end") {
       const reason = isRecord(data.reason) ? data.reason : undefined;
       const kind = typeof data.reason === "string" ? data.reason : reason?.kind;
-      const state = kind === "error" || kind === "failed" ? "failed" : kind === "canceled" ? "canceled" : "completed";
+      // DSH names a canceled turn "aborted"; Paseo only knows "canceled".
+      const state =
+        kind === "error" || kind === "failed"
+          ? "failed"
+          : kind === "canceled" || kind === "cancelled" || kind === "aborted"
+            ? "canceled"
+            : "completed";
       const error = isRecord(reason?.error) ? reason.error : undefined;
       const message = typeof error?.message === "string" ? error.message : undefined;
       this.#finishChildTurn(child, state, message);
