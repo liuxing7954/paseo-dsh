@@ -93,6 +93,7 @@ const check = (name, pass, detail) => {
       "session.persistence",
       "session.list",
       "session.subsession",
+      "session.revert.conversation",
       "permission",
     ],
   });
@@ -113,6 +114,12 @@ const check = (name, pass, detail) => {
     Array.isArray(conn.capabilities) && conn.capabilities.includes("session.subsession"),
     `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
   );
+  check(
+    "provider declares session.revert.conversation",
+    Array.isArray(conn.capabilities) && conn.capabilities.includes("session.revert.conversation"),
+    `capabilities=[${(conn.capabilities ?? []).join(", ")}]`,
+  );
+
   check(
     "provider declares session.persistence (reload recovery)",
     Array.isArray(conn.capabilities) && conn.capabilities.includes("session.persistence"),
@@ -378,6 +385,20 @@ const check = (name, pass, detail) => {
     allText.trim() ? allText.replace(/\s+/g, " ").trim().slice(0, 140) : "(no timeline text at all)",
   );
 
+  // The prompt is published once with its token; re-emitting the same row to
+  // attach a token must never reach the client as a second message.
+  const imagePromptRows = events.filter(
+    (e) =>
+      e.type === "timeline.item" &&
+      e.item?.type === "user_message" &&
+      String(e.item.text ?? "").includes("Describe what you can see"),
+  );
+  check(
+    "image prompt produces exactly one user row",
+    imagePromptRows.length === 1,
+    `${imagePromptRows.length} row(s)`,
+  );
+
   const failed = events.filter((e) => e.type === "request.failed" || e.type === "session.runtime_failed");
   check("turn produced no failure event", failed.length === 0, failed.length ? JSON.stringify(failed[0]).slice(0, 140) : "");
 
@@ -490,6 +511,64 @@ const check = (name, pass, detail) => {
     reopenedUsage !== undefined,
     JSON.stringify(reopenedUsage?.usage ?? {}),
   );
+
+  // 5c. Rewind is a fork, not a delete: the provider must return a new durable
+  // session id, and reopening it must show only the events before the chosen
+  // user message. Use the token carried by the first replayed user message.
+  const rewindCandidate = events
+    .filter((e) => e.type === "timeline.item" && e.item?.type === "user_message")
+    .find((e) => e.item?.revertToken !== undefined);
+  check(
+    "replayed user message carries a rewind token",
+    rewindCandidate !== undefined,
+    rewindCandidate ? JSON.stringify(rewindCandidate.item.revertToken) : "(no token)",
+  );
+  if (rewindCandidate !== undefined) {
+    const rewindMark = events.length;
+    await conn.send({
+      type: "session.revert",
+      requestId: "rewind-check",
+      sessionId,
+      token: rewindCandidate.item.revertToken,
+      scope: "conversation",
+    });
+    await untilSince(
+      rewindMark,
+      (e) => e.type === "request.completed" && e.requestId === "rewind-check",
+      "rewind completed",
+    );
+    const persistence = events
+      .slice(rewindMark)
+      .find((e) => e.type === "session.persistence" && e.sessionId === sessionId);
+    const nextId = persistence?.persistence?.data?.sessionId;
+    check(
+      "rewind publishes a new persistence handle",
+      typeof nextId === "string" && nextId !== sessionId,
+      persistence?.persistence ? JSON.stringify(persistence.persistence).slice(0, 120) : "(no persistence event)",
+    );
+    if (typeof nextId === "string") {
+      await conn.send({ type: "session.close", sessionId });
+      await untilSince(rewindMark, (e) => e.type === "session.closed" && e.sessionId === sessionId, "rewound closed");
+      const forkMark = events.length;
+      await conn.send({
+        type: "session.open",
+        requestId: "rewind-reopen",
+        sessionId,
+        config: { cwd: process.cwd(), mode: "build" },
+        persistence: { version: 1, data: { sessionId: nextId } },
+        history: "replay",
+      });
+      await untilSince(forkMark, (e) => e.type === "session.ready" && e.sessionId === sessionId, "forked ready");
+      const forkUserItems = events
+        .slice(forkMark)
+        .filter((e) => e.type === "timeline.item" && e.item?.type === "user_message");
+      check(
+        "rewound fork drops the chosen message and everything after it",
+        forkUserItems.length === 0,
+        `${forkUserItems.length} user message(s) replayed`,
+      );
+    }
+  }
 
   await conn.close();
 

@@ -306,17 +306,40 @@ export class DshProcess {
     })) as DshUsage;
   }
 
-  /** Send one text prompt. Resolves when the bridge accepts it, not when the turn ends. */
+  /**
+   * Send one text prompt. Resolves when the bridge accepts it, not when the turn
+   * ends. The bridge also reports the durable event seq of the user message when
+   * it has already been appended, which the rewind action needs as its token.
+   */
   async prompt(
     text: string,
     contentBlocks?: unknown[],
     delivery?: "auto" | "steer",
-  ): Promise<void> {
-    await this.#request("session/prompt", {
+  ): Promise<{ messageId?: string; seq?: number }> {
+    return (await this.#request("session/prompt", {
       sessionId: this.#options.sessionId,
       contentBlocks: contentBlocks ?? [{ type: "text", text }],
       ...(delivery === undefined ? {} : { delivery }),
-    });
+    })) as { messageId?: string; seq?: number };
+  }
+
+  /**
+   * Fork the session at a durable event boundary. `seq` is the first event the
+   * new session does not keep, so `seq: 0` produces an empty conversation.
+   */
+  async rewind(seq: number): Promise<{ sessionId: string }> {
+    return (await this.#request("paseo/rewind", {
+      sessionId: this.#options.sessionId,
+      seq,
+    })) as { sessionId: string };
+  }
+
+  /** The session's next event seq, used to anchor a command's rewind boundary. */
+  async currentSeq(): Promise<number> {
+    const result = (await this.#request("paseo/seq", {
+      sessionId: this.#options.sessionId,
+    })) as { seq?: number };
+    return typeof result.seq === "number" ? result.seq : 0;
   }
 
   /** Cancel the running turn while keeping the session usable afterwards. */
