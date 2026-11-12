@@ -1,6 +1,6 @@
 {
   "name": "paseo-dsh",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "DeepSeek Harness (dsh) as a native Paseo provider: question cards, plan mode, thinking levels, steering, images and a real slash menu. 把 DeepSeek Harness 接成 Paseo 原生 provider。",
   "keywords": [
     "paseo",
@@ -26,6 +26,7 @@
     "paseo-plugin.json",
     "index.server.ts",
     "server/",
+    "shared/",
     "lib/",
     "bin/",
     "icon.svg",
@@ -41,7 +42,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@getpaseo/plugin": ">=0.9.2"
+    "@getpaseo/plugin": ">=0.15.0"
   },
   "peerDependenciesMeta": {
     "@getpaseo/plugin": {
@@ -49,7 +50,7 @@
     }
   },
   "devDependencies": {
-    "@getpaseo/plugin": "0.9.2",
+    "@getpaseo/plugin": "0.15.4",
     "@types/node": "^22.10.2",
     "@types/react": "^19.3.0",
     "typescript": "^5.9.3",

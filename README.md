@@ -41,7 +41,7 @@ DSH 侧是一个 profile bundle。
 先完整读一遍 docs/ADOPTION.md 再动手。不要凭猜测改任何文件。
 
 ■ 第一步：检查前提
-确认 dsh、paseo、node 都在 PATH 上，且 paseo 版本 >= 0.9.2。
+确认 dsh、paseo、node 都在 PATH 上，且 paseo 版本 >= 0.15.0。
 缺任何一样就停下来告诉我，不要替我安装它们。
 
 ■ 第二步：确定用哪个模型
@@ -278,7 +278,7 @@ rm -rf ../.dbg
 
 ## 环境要求
 
-- Paseo ≥ 0.9.2（需要 direct provider 插件 API）
+- Paseo ≥ 0.15（需要 direct provider 插件 API）
 - DSH 已安装且 `dsh` 在 PATH 上
 - Node ≥ 18（探测工具用了内建 `fetch`）
 
@@ -352,6 +352,7 @@ patch 是本插件自己的发布计数；完整提交记录见
 
 | 版本 | 日期 | 更新内容 |
 | --- | --- | --- |
+| [0.2.19](https://www.npmjs.com/package/paseo-dsh/v/0.2.19) | 2026-11-12 | **DSH Plugins 管理页**：Paseo 左侧栏新增入口，列出 `paseo-dsh` 所驱动 profile 的 bundle；可启停、安装 npm registry 上声明 `dsh.bundle` 的包、卸载、检查更新与更新。安装/卸载/更新走 `dsh plugin`，启停只改 `dsh.profile.bundles`，复用 profile 的 `package.json.lock`；改动对新会话生效，正在运行的会话保持原样。带 DSH Web/Desktop 客户端界面的 bundle 会标注，界面不会出现在 Paseo。<br>需要 Paseo 0.15.x 与 DSH `0.2.2-rc.1`。 |
 | [0.2.18](https://www.npmjs.com/package/paseo-dsh/v/0.2.18) | 2026-11-12 | **对话 rewind**：用户消息旁出现回退按钮；DSH 侧按事件边界 fork 新会话，Paseo 重开截断后的历史，工作区文件不动；只支持 conversation，`files` / `both` 会明确失败。<br>**DSH 0.2.2 子代理**：bridge 转发 `parentSessionId` / `origin` / `cwd`，Paseo 把 DSH subagent 作为子会话显示，带 `toolCallId`、回合状态、timeline 与 todo 状态；权限标签改用 DSH 显示名，取消的子回合标为 `canceled`。<br>需要 Paseo 0.15.x 与 DSH `0.2.2-rc.1`（Node ≥ 24.9）。 |
 | [0.2.17](https://www.npmjs.com/package/paseo-dsh/v/0.2.17) | 2026-10-30 | **统计行重新贴合页脚**：按页脚实际绘制的位置测量并贴齐，原生皮肤下「最新回合」和「被新回合顶下去」两种状态都稳定在约 4.5px 间距；字号统一为页脚同款 13px。量不到、找不到页脚或间距超出合理范围时退回宿主间距，native 不补偿；第三方主题的位置仍由主题自己控制。 |
 | [0.2.16](https://www.npmjs.com/package/paseo-dsh/v/0.2.16) | 2026-10-28 | **统计行回到默认位置**：移除 0.2.15 里的自动贴靠、DOM 测量与设置页，只保留内容显示（轮/步、首字、tok/s、上下文、缓存命中，点开展开明细）。位置交还给 Paseo 和主题，不再随展开/收起或换主题移动。`0.2.15` 已标记 deprecated。 |
