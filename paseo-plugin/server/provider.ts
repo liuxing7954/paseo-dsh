@@ -49,6 +49,11 @@ const CAPABILITIES = [
   // accept a `session.opened` whose parentSessionId points at this session;
   // without it the server rejects the child outright.
   "session.subsession",
+  // DSH can fork a session at any durable event boundary. Rewinding is a fork
+  // that keeps only the events before the chosen message, so the old history is
+  // never mutated. Files are not part of the rewind contract: the bridge can
+  // only reproduce conversation state.
+  "session.revert.conversation",
   "permission",
 ] as const;
 
@@ -253,6 +258,15 @@ class DshConnection implements ProviderConnection {
       case "session.permission":
         this.#require(input.sessionId).resolvePermission(input.permissionId, input.response);
         return;
+      case "session.revert": {
+        // The capability is conversation-only; a files/both request reaching
+        // here would be a host bug and must fail loudly instead of pretending
+        // the working tree was restored.
+        const session = this.#require(input.sessionId);
+        await session.revert(input.token, input.scope);
+        this.#emit({ type: "request.completed", requestId: input.requestId });
+        return;
+      }
       case "session.configure": {
         const session = this.#require(input.sessionId);
         await session.configure(input.changes);

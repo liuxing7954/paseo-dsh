@@ -13,6 +13,7 @@
  *
  * @module dsh-paseo-bridge/server
  */
+import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { brandString } from '@deepseek-ai/dsh-brand';
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
@@ -21,6 +22,71 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent';
 
 function encodedImage(block) {
   return block.type === 'image' && 'data' in block;
+}
+
+/** True when the log's newest turn boundary is a start rather than an end. */
+function hasOpenTurn(events) {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i].type === 'turn/end') return false;
+    if (events[i].type === 'turn/start') return true;
+  }
+  return false;
+}
+
+/** Wait for the turn that was running at `fromSeq` to close. */
+async function waitForTurnEnd(session, fromSeq, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const events = session.snapshotEvents();
+    const last = events[events.length - 1];
+    if (last !== undefined && last.type === 'turn/end' && last.seq >= fromSeq) return true;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
+/**
+ * Cut before the turn that owns `seq`.
+ *
+ * `seq` is usually a user/message event seq. A command token uses the next
+ * exclusive log offset instead, so an offset that has no event at that index
+ * cuts directly before it. Mirrors dsh-tui's scan: stop at turn/start, and do
+ * not cross a turn/end.
+ */
+function rewindBoundary(events, seq) {
+  if (seq >= events.length || events[seq]?.seq !== seq) return seq - 1;
+  let boundary = seq;
+  for (let i = seq; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event === undefined) break;
+    if (event.type === 'turn/start') {
+      boundary = event.seq - 1;
+      break;
+    }
+    if (event.type === 'turn/end') break;
+  }
+  return boundary;
+}
+
+/** Copy the source log through an inclusive seq, refusing an open-turn cut. */
+function sliceRewindSeed(events, boundary) {
+  if (boundary < 0) return [];
+  if (boundary >= events.length) {
+    throw new Error(`rewind boundary ${String(boundary)} is outside the session log`);
+  }
+  const boundaryEvent = events[boundary];
+  if (boundaryEvent === undefined || boundaryEvent.seq !== boundary) {
+    throw new Error(`rewind boundary ${String(boundary)} is not a contiguous event`);
+  }
+  const seed = events.slice(0, boundary + 1);
+  let lastTurn;
+  for (const event of seed) {
+    if (event.type === 'turn/start' || event.type === 'turn/end') lastTurn = event;
+  }
+  if (lastTurn?.type === 'turn/start') {
+    throw new Error(`rewind boundary ${String(boundary)} ends inside an open turn`);
+  }
+  return seed;
 }
 
 /**
@@ -192,7 +258,17 @@ export class PaseoHarnessServer {
     this.controls = new Map();
     /** sessionId -> { handle } for agents this server owns. */
     this.sessions = new Map();
+    /**
+     * Agents replaced by a rewind. The host closes this bridge immediately
+     * after the persistence update, so their old handle is torn down during
+     * shutdown together with the live one. Disposing it here, while the old
+     * advisor may still be retrying a failed model call, closes the log under
+     * an in-flight flush.
+     */
+    this.retiredHandles = [];
     this.sessionCreations = new Map();
+    /** `${sessionId}:${messageId}` -> resolve(seq) for prompts awaiting their durable user event. */
+    this.userMessageWaiters = new Map();
     this.disposers = [];
     this.initialized = false;
     this.shuttingDown = false;
@@ -201,6 +277,14 @@ export class PaseoHarnessServer {
 
     this.disposers.push(
       ctx.on('session/event', (session, event) => {
+        if (event.type === 'user/message' && typeof event.data?.id === 'string') {
+          const key = `${String(session.id)}:${event.data.id}`;
+          const waiter = this.userMessageWaiters.get(key);
+          if (waiter !== undefined) {
+            this.userMessageWaiters.delete(key);
+            waiter(event.seq);
+          }
+        }
         this.transport.notify('session.event', sessionEnvelope(session, { event }));
       }),
     );
@@ -297,12 +381,38 @@ export class PaseoHarnessServer {
     const content = await durablePromptContent(this.ctx, params.contentBlocks ?? []);
     this.assertLiveAgent(rec, params.sessionId);
     const message = createUserMessage({ content, source: { kind: 'user' } });
+    // Register before enqueueing: the user/message event can be appended before
+    // `followup` returns. The seq is the rewind token Paseo stores for this row.
+    const seqPromise = this.waitForUserMessageSeq(params.sessionId, String(message.id), 5000);
     // A steer belongs inside the turn already running; a plain prompt starts the
     // next one. Without this distinction an interjection queues behind the very
     // turn it was meant to correct.
     if (params.delivery === 'steer') rec.handle.agent.steer(message);
     else rec.handle.agent.followup(message);
-    return { messageId: String(message.id) };
+    const seq = await seqPromise;
+    return { messageId: String(message.id), ...(seq === undefined ? {} : { seq }) };
+  }
+
+  /**
+   * Resolve with the durable seq of one just-enqueued user message.
+   *
+   * A prompt is accepted before its turn starts, so the event may not exist yet;
+   * `undefined` after the timeout is honest and simply leaves that row without a
+   * rewind token (a steer queued behind a long turn behaves this way).
+   */
+  waitForUserMessageSeq(sessionId, messageId, timeoutMs) {
+    const key = `${sessionId}:${messageId}`;
+    return new Promise((resolveSeq) => {
+      const timer = setTimeout(() => {
+        this.userMessageWaiters.delete(key);
+        resolveSeq(undefined);
+      }, timeoutMs);
+      timer.unref?.();
+      this.userMessageWaiters.set(key, (seq) => {
+        clearTimeout(timer);
+        resolveSeq(typeof seq === 'number' ? seq : undefined);
+      });
+    });
   }
 
   /**
@@ -313,6 +423,142 @@ export class PaseoHarnessServer {
     const rec = this.requireSession(params.sessionId);
     rec.handle.agent.cancel({ kind: 'user' });
     return { canceled: true };
+  }
+
+  /** The live session's next event seq, i.e. the boundary after its last event. */
+  currentSeq(params) {
+    this.requireSession(params.sessionId);
+    const session = this.ctx.get('sessions')?.get(brandString(params.sessionId));
+    return { seq: typeof session?.seq === 'number' ? session.seq : 0 };
+  }
+
+  /**
+   * Fork the live session before the turn that owns event `seq` and return the
+   * new session id.
+   *
+   * DSH never mutates a live log; rewinding is a fork of the durable prefix.
+   * The cut is before the turn start, not before the user message: a seed that
+   * ends inside an open turn would replay a half-finished turn. If a turn is
+   * still running it is cancelled and allowed to settle first, matching the
+   * dsh-tui /rewind path.
+   *
+   * The branch records `parentSession` but no `origin`: it is a normal branch,
+   * not a subagent, so the plugin must not attach it as a child. The caller
+   * reopens the session with the returned id and replays its events.
+   */
+  async rewind(params) {
+    const rec = this.requireSession(params.sessionId);
+    const store = this.ctx.get('sessions');
+    if (store === undefined) throw new Error('session store is not mounted');
+    const source = store.get(brandString(params.sessionId));
+    if (source === undefined) throw new Error(`unknown session: ${params.sessionId}`);
+    const seq = params.seq;
+    if (!Number.isSafeInteger(seq) || seq < 0 || seq > source.seq) {
+      throw new Error(`invalid rewind boundary: ${String(seq)}`);
+    }
+
+    // A rewind while the agent is working must not snapshot an open turn. Ask
+    // the agent to cancel, then wait for its turn/end event to reach the log.
+    let events = source.snapshotEvents();
+    if (hasOpenTurn(events)) {
+      const cancelSeq = source.seq;
+      rec.handle.agent.cancel({ kind: 'user' });
+      if (!await waitForTurnEnd(source, cancelSeq, 30_000)) {
+        throw new Error('rewind could not settle the running turn');
+      }
+      events = source.snapshotEvents();
+    }
+
+    const boundary = rewindBoundary(events, seq);
+    if (boundary < 0) throw new Error('cannot rewind past the very first message');
+    const seed = sliceRewindSeed(events, boundary);
+    const newId = randomUUID();
+
+    // Keep the live route and preset. A fork is a new agent, so the model
+    // selection must be installed on it before its first turn.
+    const initial = { ...rec.control.selection.current };
+    const control = { selection: { current: initial, assembled: undefined }, dispose: undefined };
+    const planMode = this.ctx.get('planMode');
+    let planActive = false;
+    if (planMode !== undefined) {
+      try {
+        planActive = planMode.get(rec.handle.agent).active === true;
+      } catch {
+        planActive = false;
+      }
+    }
+    const installSelection = (agentCtx) => {
+      control.dispose = installModelSelection(agentCtx, control.selection);
+    };
+    const clearInbox = (agent) => {
+      try {
+        agent?.inbox?.clear?.();
+      } catch {
+        /* an older runtime has no inbox handle; the seed is still valid */
+      }
+    };
+    const presets = this.ctx.get('agentPresets');
+    let agentPreset;
+    let setup = (agentCtx, agent) => {
+      installSelection(agentCtx);
+      clearInbox(agent);
+    };
+    if (presets !== undefined) {
+      let storedPreset;
+      try {
+        storedPreset = this.ctx.get('sessionProjections')?.stateOf(source, 'agentPreset');
+      } catch {
+        storedPreset = undefined;
+      }
+      const resolvedId = (await presets.resolve(storedPreset)).id;
+      agentPreset = resolvedId;
+      setup = async (agentCtx, agent) => {
+        installSelection(agentCtx);
+        await presets.mount(agentCtx, resolvedId);
+        clearInbox(agent);
+      };
+    }
+
+    const meta = {
+      cwd: source.header?.cwd ?? this.cwd,
+      ...(agentPreset === undefined ? {} : { agentPreset }),
+      ...(seed.length === 0 ? {} : { isSeeded: true, parentSession: source.id }),
+    };
+    const agentOptions = {
+      ...initial,
+      ...(this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens }),
+    };
+    const handle = await this.ctx.agents.create({
+      sessionId: brandString(newId),
+      meta,
+      agentOptions,
+      setup,
+      ...(seed.length === 0 ? {} : { seed, inheritedEventCount: seed.length }),
+    });
+
+    if (planActive && planMode !== undefined) {
+      try {
+        planMode.set(handle.agent, true);
+      } catch (error) {
+        process.stderr.write(
+          `[bridge] plan mode could not be restored after rewind: ${String(error?.message ?? error)}\n`,
+        );
+      }
+    }
+
+    this.controls.set(params.sessionId, control);
+    this.sessions.set(params.sessionId, { handle, control });
+    try {
+      rec.control?.dispose?.();
+    } catch {
+      /* the old selection belongs to an agent that is about to be disposed */
+    }
+    // Do not dispose the old agent here: the host closes this bridge right
+    // after the persistence update, and an advisor retry from the old turn can
+    // otherwise flush into a handle this method just closed. Keep ownership
+    // until shutdown, where the process is already going away.
+    this.retiredHandles.push(rec.handle);
+    return { sessionId: newId };
   }
 
   /** Report the mounted plan state for one session, or the queued intent before it exists. */
@@ -837,6 +1083,7 @@ export class PaseoHarnessServer {
     this.sessionCreations.clear();
     const records = [...this.sessions.values()];
     this.sessions.clear();
+    const retired = this.retiredHandles.splice(0);
     const failures = [];
     while (this.disposers.length > 0) {
       try {
@@ -855,6 +1102,7 @@ export class PaseoHarnessServer {
     this.controls.clear();
     const teardown = await Promise.allSettled([
       ...records.map((rec) => Promise.resolve().then(() => rec.handle.dispose())),
+      ...retired.map((handle) => Promise.resolve().then(() => handle.dispose())),
       ...(this.llmFiber === undefined
         ? []
         : [Promise.resolve().then(() => this.llmFiber?.dispose())]),
@@ -899,6 +1147,10 @@ export class PaseoHarnessServer {
         return this.planSet(params);
       case 'paseo/config/set':
         return this.configSet(params);
+      case 'paseo/seq':
+        return this.currentSeq(params);
+      case 'paseo/rewind':
+        return this.rewind(params);
       case 'shutdown':
         return this.shutdown();
       default:

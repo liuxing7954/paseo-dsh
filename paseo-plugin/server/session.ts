@@ -135,13 +135,23 @@ interface ChildSessionState {
 export class DshSession {
   readonly id: string;
   /** DSH's session id (see {@link DshSessionOptions.dshSessionId}). */
-  readonly #dshSessionId: string;
+  #dshSessionId: string;
+  /** Previous session ids whose buffered events may still arrive after a rewind. */
+  #retiredSessionIds = new Set<string>();
   readonly #options: DshSessionOptions;
   readonly #timeline = new TimelineBuilder();
   /** DSH subagent child sessions, keyed by their own DSH session id. */
   #children = new Map<string, ChildSessionState>();
   /** Parent subagent tool calls waiting for their `started subagent <id>` result. */
   #pendingSubagentCalls = new Map<string, { description?: string }>();
+  /**
+   * Prompts whose user message had no durable seq when the bridge accepted it.
+   * The seq arrives later as a session event; the same row is re-emitted then
+   * so a message queued behind a long turn still becomes rewindable.
+   */
+  #pendingUserMessages = new Map<string, { clientMessageId: string; text: string }>();
+  /** User events that arrived before their prompt response carried a seq. */
+  #recentUserMessageSeqs = new Map<string, number>();
   #childTurnSeq = 0;
   #warnedNoSubsession = false;
   #process: DshProcess | undefined;
@@ -477,7 +487,16 @@ export class DshSession {
         this.#options.emit({
           type: "timeline.item",
           sessionId: this.id,
-          item: { type: "user_message", id: `user:history:${seq}`, text, clientMessageId: `history:${seq}` },
+          item: {
+            type: "user_message",
+            id: `user:history:${seq}`,
+            text,
+            clientMessageId: `history:${seq}`,
+            // Paseo turns this into the provider token it sends back on rewind.
+            // The seq is durable: the stored log is replayed with the same
+            // numbering after a restart.
+            revertToken: { seq },
+          },
         });
         continue;
       }
@@ -522,7 +541,22 @@ export class DshSession {
     if (prompt.input.type === "command") {
       const args = prompt.input.arguments ?? "";
       const line = args.trim() === "" ? `/${prompt.input.name}` : `/${prompt.input.name} ${args}`;
-      this.#emitUserMessage(prompt.clientMessageId, line);
+      // A command message has no DSH user event of its own. Anchor it at the
+      // current end of the log so rewinding it removes everything the command
+      // did, just like rewinding a normal message removes its turn. Read the
+      // boundary before publishing the row so the message is rewindable from
+      // its first appearance.
+      let boundary: number | undefined;
+      try {
+        boundary = await process.currentSeq();
+      } catch (error) {
+        this.#options.log(`command boundary unavailable: ${messageOf(error)}`);
+      }
+      this.#emitUserMessage(
+        prompt.clientMessageId,
+        line,
+        boundary === undefined ? undefined : { seq: boundary },
+      );
 
       if (this.#commandKinds.get(prompt.input.name) === "command") {
         try {
@@ -545,12 +579,13 @@ export class DshSession {
       // A skill (or an unrecognized name): hand DSH the bare `/name` line. Its
       // skill tool injects a user-invocable skill from exactly that token.
       try {
-        await process.prompt(line, [{ type: "text", text: line }], prompt.delivery);
+        const result = await process.prompt(line, [{ type: "text", text: line }], prompt.delivery);
+        this.#emitPromptAccepted(prompt.clientMessageId);
+        this.#emitRewindToken(prompt.clientMessageId, line, result.seq);
       } catch (error) {
         this.#emitPromptFailed(prompt.clientMessageId, error);
         return;
       }
-      this.#emitPromptAccepted(prompt.clientMessageId);
       return;
     }
 
@@ -559,29 +594,126 @@ export class DshSession {
     // reference: a block with no DSH counterpart used to throw *outside* this
     // try, which turned one unsupported file into `session.runtime_failed` and
     // killed the whole session ("stale after its plugin reloaded" on retry).
+    let acceptedSeq: number | undefined;
+    let acceptedText = "";
+    let optimistic = false;
     try {
       const blocks = prompt.input.content.map(toDshContent);
       const label = blocks
         .map((block) => (block.type === "text" ? (block.text as string) : ""))
         .filter((text) => text !== "")
         .join("\n");
+      acceptedText = label;
 
-      this.#emitUserMessage(prompt.clientMessageId, label);
-      await process.prompt(label, blocks.length === 0 ? undefined : blocks, prompt.delivery);
+      // An idle auto prompt can wait for DSH to append the durable user event,
+      // so publish the row once with its rewind token instead of publishing it
+      // twice. Steer and mid-turn prompts must stay optimistic: their user event
+      // may only arrive in a later turn, so show the row now and attach the token
+      // when the event (or the bridge response) supplies the seq.
+      optimistic = prompt.delivery === "steer" || this.#turnId !== null;
+      if (optimistic) this.#emitUserMessage(prompt.clientMessageId, label);
+
+      const result = await process.prompt(
+        label,
+        blocks.length === 0 ? undefined : blocks,
+        prompt.delivery,
+      );
+      acceptedSeq = result.seq;
+      if (!optimistic) {
+        this.#emitUserMessage(
+          prompt.clientMessageId,
+          label,
+          acceptedSeq === undefined ? undefined : { seq: acceptedSeq },
+        );
+      }
+      if (acceptedSeq === undefined && result.messageId !== undefined) {
+        const seenSeq = this.#recentUserMessageSeqs.get(result.messageId);
+        if (seenSeq !== undefined) {
+          this.#recentUserMessageSeqs.delete(result.messageId);
+          this.#emitRewindToken(prompt.clientMessageId, label, seenSeq);
+        } else {
+          this.#pendingUserMessages.set(result.messageId, {
+            clientMessageId: prompt.clientMessageId,
+            text: label,
+          });
+        }
+      }
     } catch (error) {
+      // The optimistic paths already published the row. Keep the idle path's
+      // previous behaviour too: a rejected prompt still shows the text that
+      // failed, next to the failure card.
+      if (!optimistic && acceptedText !== "") {
+        this.#emitUserMessage(prompt.clientMessageId, acceptedText);
+      }
       this.#emitPromptFailed(prompt.clientMessageId, error);
       return;
     }
 
     this.#emitPromptAccepted(prompt.clientMessageId);
+    // A steer message was already published optimistically; re-emit the same
+    // id and text so Paseo records the token without adding a second row.
+    if (optimistic && acceptedSeq !== undefined) {
+      this.#emitRewindToken(prompt.clientMessageId, acceptedText, acceptedSeq);
+    }
   }
 
-  #emitUserMessage(clientMessageId: string, text: string): void {
+  /**
+   * Rewind the conversation to the boundary carried by a user message's token.
+   *
+   * DSH cannot delete events from a live log, so the bridge forks a new session
+   * that keeps only the events before the chosen message. This object switches
+   * its durable id to that fork and tells Paseo the new persistence handle; the
+   * host then reopens the session and replays the shorter history.
+   */
+  async revert(token: unknown, scope: "conversation" | "files" | "both"): Promise<void> {
+    if (scope !== "conversation") {
+      throw new Error(`rewind scope "${scope}" is not supported; only conversation state can be restored`);
+    }
+    if (!isRecord(token)) throw new Error("rewind token is not an object");
+    const seq = token["seq"];
+    if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) {
+      throw new Error("rewind token has no valid event seq");
+    }
+    const result = await this.#require().rewind(seq);
+    if (typeof result.sessionId !== "string" || result.sessionId === "") {
+      throw new Error("the bridge did not return the forked session id");
+    }
+    this.#retiredSessionIds.add(this.#dshSessionId);
+    this.#dshSessionId = result.sessionId;
+    // No event from the discarded branch can belong to the new timeline.
+    this.#pendingUserMessages.clear();
+    this.#recentUserMessageSeqs.clear();
+    // The host reads this from its session state after the request completes,
+    // closes the old process, and reopens with the new id.
+    this.#options.emit({
+      type: "session.persistence",
+      sessionId: this.id,
+      persistence: { version: 1, data: { sessionId: this.#dshSessionId } },
+    });
+  }
+
+  #emitUserMessage(
+    clientMessageId: string,
+    text: string,
+    revertToken?: { seq: number },
+  ): void {
     this.#options.emit({
       type: "timeline.item",
       sessionId: this.id,
-      item: { type: "user_message", id: `user:${clientMessageId}`, text, clientMessageId },
+      item: {
+        type: "user_message",
+        id: `user:${clientMessageId}`,
+        text,
+        clientMessageId,
+        ...(revertToken === undefined ? {} : { revertToken }),
+      },
     });
+  }
+
+  /** Attach a rewind token to an already-published message without a new row. */
+  #emitRewindToken(clientMessageId: string, text: string, seq: number | undefined): void {
+    if (seq === undefined) return;
+    this.#emitUserMessage(clientMessageId, text, { seq });
   }
 
   #emitPromptFailed(clientMessageId: string, error: unknown): void {
@@ -742,6 +874,8 @@ export class DshSession {
     }
     this.#children.clear();
     this.#pendingSubagentCalls.clear();
+    this.#pendingUserMessages.clear();
+    this.#recentUserMessageSeqs.clear();
     this.#flushLive();
     this.#clearLive();
     await this.#process?.shutdown();
@@ -1021,11 +1155,34 @@ export class DshSession {
   #onSessionEvent(payload: DshSessionEvent): void {
     const sessionId =
       typeof payload.sessionId === "string" ? payload.sessionId : this.#dshSessionId;
+    if (this.#retiredSessionIds.has(sessionId)) return;
     if (sessionId !== this.#dshSessionId) {
       this.#onChildSessionEvent({ ...payload, sessionId });
       return;
     }
     const event = payload.event;
+    // A prompt accepted while its agent was still starting has no seq yet. The
+    // durable user message arrives later; attach the rewind token then, using
+    // the same id and text so Paseo does not add a duplicate row.
+    if (event.type === "user/message") {
+      const data = isRecord(event.data) ? event.data : {};
+      const messageId = typeof data.id === "string" ? data.id : undefined;
+      if (messageId !== undefined && typeof event.seq === "number") {
+        this.#recentUserMessageSeqs.set(messageId, event.seq);
+        if (this.#recentUserMessageSeqs.size > 100) {
+          const oldest = this.#recentUserMessageSeqs.keys().next().value;
+          if (oldest !== undefined) this.#recentUserMessageSeqs.delete(oldest);
+        }
+      }
+      const pending = messageId === undefined ? undefined : this.#pendingUserMessages.get(messageId);
+      if (pending !== undefined && messageId !== undefined) {
+        this.#pendingUserMessages.delete(messageId);
+        if (typeof event.seq === "number") {
+          this.#emitRewindToken(pending.clientMessageId, pending.text, event.seq);
+        }
+      }
+      return;
+    }
     // The model can leave plan mode on its own, for example by submitting a plan
     // for approval. Mirror that into the composer's mode selection so the toggle
     // never disagrees with the runtime.
