@@ -36,8 +36,14 @@ export function profileName(): string {
   return process.env.DSH_PASEO_PROFILE ?? "paseo";
 }
 
-function dshHome(): string {
+/** Root that holds every DSH profile; `DSH_HOME` overrides `~/.dsh`. */
+export function dshHomeDir(): string {
   return process.env.DSH_HOME ?? join(homedir(), ".dsh");
+}
+
+/** Directory of one profile, without creating or reading it. */
+export function profileDir(profile: string = profileName(), home: string = dshHomeDir()): string {
+  return join(home, "profiles", profile);
 }
 
 function profilePackageJson(profile: string): string {
@@ -74,7 +80,7 @@ export interface ProvisionResult {
  */
 export function ensurePaseoProfile(): ProvisionResult {
   const profile = profileName();
-  const dir = join(dshHome(), "profiles", profile);
+  const dir = profileDir(profile);
   mkdirSync(join(dir, "node_modules"), { recursive: true });
 
   // The profile's own files belong to the user: create a missing one, but never

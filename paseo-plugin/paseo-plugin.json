@@ -2,6 +2,6 @@
   "id": "dsh-paseo",
   "description": "DeepSeek Harness (dsh) as a native Paseo provider: question cards, plan mode, thinking levels, steering, images, a slash menu, permissions and presets. 把 DeepSeek Harness 接成 Paseo 原生 provider：提问卡片、计划模式、思考档位、插话、图片、斜杠菜单、权限与预设。",
   "requirements": {
-    "paseo": ">=0.9.2"
+    "paseo": ">=0.15.0"
   }
 }

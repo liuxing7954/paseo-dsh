@@ -164,7 +164,7 @@ const BINARY_CANDIDATES = [
   `${process.env.HOME ?? ""}/.local/bin/dsh`,
 ].filter((value): value is string => typeof value === "string" && value.length > 0);
 
-function resolveBinary(): string {
+export function resolveDshBinary(): string {
   for (const candidate of BINARY_CANDIDATES) {
     if (candidate.includes("/") && existsSync(candidate)) return candidate;
     if (!candidate.includes("/")) return candidate;
@@ -205,7 +205,7 @@ export class DshProcess {
   }
 
   async #start(): Promise<void> {
-    const child = spawn(resolveBinary(), ["--profile", process.env.DSH_PASEO_PROFILE ?? "paseo"], {
+    const child = spawn(resolveDshBinary(), ["--profile", process.env.DSH_PASEO_PROFILE ?? "paseo"], {
       cwd: this.#options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...this.#options.env },

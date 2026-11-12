@@ -7,5 +7,9 @@ declare module "react-native" {
   export const View: any;
   export const Text: any;
   export const Pressable: any;
+  export const TextInput: any;
+  export const Switch: any;
+  export const ScrollView: any;
+  export const ActivityIndicator: any;
   export const Platform: { OS: "ios" | "android" | "web" | "windows" | "macos" };
 }

@@ -25,6 +25,7 @@ below.
 | Slash commands / skills | ⚠️ often a command subset | ✅ the `/` menu lists DSH commands and user-invocable skills; commands run in the runtime, skills are injected by `/name` |
 | Permission modes (sandbox) | ❌ no shared switch | ✅ **Permissions** dropdown in the composer switches DSH's sandbox and approval presets |
 | Agent presets | ❌ | ✅ when the profile mounts the agent-preset registry, a **Preset** dropdown appears (chosen at session creation, locked after the first turn) |
+| DSH Plugins page | — | ✅ sidebar page lists the profile's bundles; enable, install registry bundles, remove and update them; changes apply to new sessions |
 | Session resume / import | ❌ no history, no import | ✅ reopening replays history through Paseo's `history: replay`; **import** native DSH sessions (`session.list`, read from `~/.dsh/sessions`) |
 | Stop and keep chatting | — | ✅ cancels the current turn only; the session survives |
 
@@ -47,7 +48,7 @@ Read docs/ADOPTION.md completely before changing anything. Do not edit files by
 guesswork.
 
 ■ Step 1: check prerequisites
-Confirm that dsh, paseo and node are on PATH and that paseo is >= 0.9.2.
+Confirm that dsh, paseo and node are on PATH and that paseo is >= 0.15.0.
 If anything is missing, stop and tell me; do not install it for me.
 
 ■ Step 2: pick the model route
@@ -308,7 +309,7 @@ a false diagnosis).
 
 ## Requirements
 
-- Paseo ≥ 0.9.2 (needs the direct-provider plugin API)
+- Paseo ≥ 0.15 (needs the direct-provider plugin API)
 - DSH installed with `dsh` on PATH
 - Node ≥ 18 (the probe tools use the built-in `fetch`)
 

@@ -40,11 +40,13 @@ What you get that the ACP boundary can't carry:
   persona+capability bundles, chosen at session start and locked once it begins
 - Session **reopen and import**: a reopened session replays its conversation
   history, and native DSH sessions can be imported from Paseo
+- A **DSH Plugins** page in the sidebar that lists the profile's bundles and
+  can enable, install, remove and update them (new sessions pick up changes)
 
 Full documentation, the adoption guide, and 20 real defects with their fixes
 live in the main repository: **https://github.com/liuxing7954/paseo-dsh**
 
-Requires Paseo ≥ 0.9.2 and the official `dsh` on the daemon's `PATH`.
+Requires Paseo ≥ 0.15 and the official `dsh` on the daemon's `PATH`.
 
 ## Versioning
 
@@ -94,11 +96,13 @@ ACP 承载不了、而这里都有：
 - profile 声明了 agent preset 时的 **Preset** 下拉——人设 + 能力包，
   建会话时选、首个回合后锁定
 - **会话恢复与导入**：重开会话会回放历史；并可从 Paseo 导入 DSH 原生会话
+- 左侧栏 **DSH Plugins** 页：列出 profile 里的 bundle，启停、安装、卸载、
+  检查更新（新会话生效）
 
 完整文档、改造指南、以及 20 个真实缺陷的修复记录都在主仓库：
 **https://github.com/liuxing7954/paseo-dsh**
 
-需要 Paseo ≥ 0.9.2，且 daemon 的 `PATH` 上有官方 `dsh`。
+需要 Paseo ≥ 0.15，且 daemon 的 `PATH` 上有官方 `dsh`。
 
 ### 版本策略
 
