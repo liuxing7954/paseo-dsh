@@ -47,7 +47,7 @@
     "check:locales": "node scripts/check-locales.mjs"
   },
   "peerDependencies": {
-    "@getpaseo/plugin": ">=0.13.0"
+    "@getpaseo/plugin": ">=0.15.0"
   },
   "peerDependenciesMeta": {
     "@getpaseo/plugin": {

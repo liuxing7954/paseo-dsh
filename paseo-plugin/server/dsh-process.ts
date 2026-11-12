@@ -163,7 +163,7 @@ export interface DshProcessOptions extends DshProcessHandlers {
   initializeRoute?: boolean;
 }
 
-function resolveBinary(env: NodeJS.ProcessEnv): string {
+export function resolveDshBinary(env: NodeJS.ProcessEnv = process.env): string {
   const candidates = [env.DSH_BINARY, "dsh", `${env.HOME ?? ""}/.local/bin/dsh`]
     .filter((value): value is string => typeof value === "string" && value.length > 0);
   for (const candidate of candidates) {
@@ -207,7 +207,7 @@ export class DshProcess {
 
   async #start(): Promise<void> {
     const env = { ...process.env, ...this.#options.env };
-    const launch = resolveDshCommand(resolveBinary(env), env, this.#options.cwd);
+    const launch = resolveDshCommand(resolveDshBinary(env), env, this.#options.cwd);
     const child = spawn(launch.command, [...launch.args, "--profile", env.DSH_PASEO_PROFILE ?? "paseo"], {
       cwd: this.#options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
