@@ -16,6 +16,9 @@ dist/
 *.credentials.yaml
 credentials.json
 
+# Throwaway Chrome profile used by marketing/render.mjs
+marketing/.chrome-profile/
+
 # Editor and OS noise
 .DS_Store
 .idea/

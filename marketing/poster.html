@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>paseo-dsh — field notes</title>
+<link rel="stylesheet" href="poster.css">
+</head>
+<body data-scene="cover">
+
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 2.6c-4.3 0-7.6 3.1-7.6 7.1 0 2.4 1.2 4.4 3.2 5.7v3.1c0 .5.6.8 1 .5l2.4-1.7c.3 0 .7.1 1 .1 4.3 0 7.6-3.1 7.6-7.1S16.3 2.6 12 2.6Z"/><path d="M8.4 9.6h7.2"/><path d="M8.4 12.8h4.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4a2.5 2.5 0 0 0-2.5 2.5A3 3 0 0 0 5 12a3 3 0 0 0 1.5 5.5A2.5 2.5 0 0 0 9 20V4Z"/><path d="M15 4a2.5 2.5 0 0 1 2.5 2.5A3 3 0 0 1 19 12a3 3 0 0 1-1.5 5.5A2.5 2.5 0 0 1 15 20V4Z"/></symbol>
+  <symbol id="i-hammer" viewBox="0 0 24 24"><path d="m14 3 7 7-4 4-7-7 4-4Z"/><path d="m10 7-7 7 3 3 7-7"/><path d="m3 21 4-4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 16 9 5 9-5"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5"/><path d="M12 17h8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-5-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2L12 3Z"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6Z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 0-2 2V5Z"/><path d="M4 19a2 2 0 0 1 2-2h12"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 4v16M6 14l6 6 6-6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.7 3.8 9S14.5 18.5 12 21c-2.5-2.5-3.8-5.7-3.8-9S9.5 5.5 12 3Z"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M8 6h4a4 4 0 0 1 4 4"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17.5v.01"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 3v-6.2A8.5 8.5 0 0 1 11.5 3h1A8.5 8.5 0 0 1 21 11.5Z"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 4 6 2 6-2v14l-6 2-6-2-6 2V6l6-2Z"/><path d="M9 4v14M15 6v14"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-8 12h6l-1 8 8-12h-6l1-8Z"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M20 11.5 12.5 19a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 15-5-5L5 20"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6V2Z"/><path d="M14 2v6h6"/></symbol>
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M3 7h12M3 12h18M3 17h9"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M12 9v3a6 6 0 0 0 6 6M12 12a6 6 0 0 1-6 6"/></symbol>
+</svg>
+
+<div class="artboard">
+  <div class="bg"></div>
+  <div class="frame"><i></i><i></i><i></i><i></i></div>
+
+  <!-- ============================================================ -->
+  <!-- 01 · cover                                                    -->
+  <!-- ============================================================ -->
+  <section class="scene scene-cover" aria-label="封面">
+    <div class="brand cover-brand">
+      <div class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></div>
+      <div>
+        <div class="brand-name">paseo-dsh</div>
+        <div class="brand-sub">A NATIVE PROVIDER / FIELD NOTES</div>
+      </div>
+    </div>
+
+    <div class="cover-meta meta-right">
+      <span class="issue">NO. 01 / 08</span><br>
+      OPEN SOURCE · MIT<br>
+      PASEO 0.9.2+ / DSH 0.2.x
+    </div>
+
+    <div class="cover-stamp stamp">
+      <span>FIELD</span><span>TESTED</span>
+    </div>
+
+    <div class="cover-kicker kicker">
+      <span class="rule"></span>
+      <span>PASEO × DEEPSEEK HARNESS</span>
+      <span class="sep"></span>
+      <span>原生接入，不是 ACP</span>
+    </div>
+
+    <h1 class="cover-title">
+      把 DeepSeek Harness<br>
+      接进 <span class="marker">Paseo</span>
+    </h1>
+
+    <p class="cover-lede">
+      <b>原生 provider，不是 ACP。</b>提问卡片、Plan、思考档位、流式输出、附件与图片，
+      <br>全部走 Paseo 自己的协议；不 fork Paseo，也不 fork DSH。
+    </p>
+
+    <div class="install cover-install">
+      <span class="prompt">$</span>
+      <code>paseo plugin add npm:paseo-dsh</code>
+      <span class="copy"><svg class="ic"><use href="#i-copy"/></svg></span>
+    </div>
+
+    <div class="cover-stage">
+      <div class="window">
+        <div class="win-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>DeepSeek Harness (native)</div>
+          <div class="win-right"><span>paseo-dsh</span><span class="btn-ghost">Commit</span></div>
+        </div>
+        <div class="win-body">
+          <div class="chat-user">
+            <div class="bubble">把支付回调的幂等补上，先别动数据库。</div>
+          </div>
+          <div class="chat-ai">
+            <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+            <div>
+              <div class="ai-name">DeepSeek Harness</div>
+              <div class="ai-text">明白。先确认一个边界：</div>
+            </div>
+          </div>
+          <div class="toolrow">
+            <span class="tool"><svg class="ic"><use href="#i-command"/></svg>ask_user_question</span>
+            <span class="tool"><span class="ok">1</span> / 2 questions</span>
+          </div>
+          <div class="qcard">
+            <div class="qcard-head"><span>NEED YOUR DECISION</span><span class="badge">1 / 2</span></div>
+            <div class="qcard-title">重复回调应该怎么处理？</div>
+            <div class="options">
+              <div class="option on">
+                <span class="key">A</span>
+                <div><div class="o-title">按 event_id 去重</div><div class="o-desc">重复事件直接返回 200</div></div>
+                <svg class="ic check"><use href="#i-check"/></svg>
+              </div>
+              <div class="option">
+                <span class="key">B</span>
+                <div><div class="o-title">写一张幂等表</div><div class="o-desc">事务内判重，保留完整审计</div></div>
+              </div>
+              <div class="option">
+                <span class="key">C</span>
+                <div><div class="o-title">只打日志观察</div><div class="o-desc">先跑一周再决定</div></div>
+              </div>
+            </div>
+            <div class="qcard-foot">
+              <span class="hint">A / B / C 选择 · Enter 提交</span>
+              <span class="submit">提交 <svg class="ic"><use href="#i-arrow"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>给 agent 发消息…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-brain"/></svg>Max</span>
+            <span class="pill"><svg class="ic"><use href="#i-hammer"/></svg>Build</span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-layers"/></svg>standard</span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chips cover-chips">
+      <span class="chip hot"><svg class="ic"><use href="#i-stream"/></svg>流式输出</span>
+      <span class="chip forest"><svg class="ic"><use href="#i-paperclip"/></svg>附件 / 图片</span>
+      <span class="chip mustard"><svg class="ic"><use href="#i-layers"/></svg>标准专家模式</span>
+      <span class="chip"><svg class="ic"><use href="#i-message"/></svg>原生提问卡片</span>
+      <span class="chip"><svg class="ic"><use href="#i-map"/></svg>Build / Plan</span>
+      <span class="chip"><svg class="ic"><use href="#i-history"/></svg>会话恢复</span>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>github.com/liuxing7954/paseo-dsh</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">01 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 02 · questions                                                -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-questions" aria-label="提问卡片">
+    <div class="fig-row"><span class="fig-box">FIG. 02</span><span class="fig-label">ASK_USER_QUESTION</span></div>
+    <div class="corner-note">原生卡片<br>不是一段文本</div>
+    <h2>模型会停下来问你，<br><span class="marker">而不是替你猜</span></h2>
+    <p class="lede">
+      DSH 的 <code>ask_user_question</code> 走 Paseo 原生提问卡片：步进式选项，一次提交，<br>
+      答案直接回到工具调用。
+    </p>
+
+    <div class="stage">
+      <div class="surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>ask_user_question</div>
+          <div class="win-right"><span class="note"><svg class="ic"><use href="#i-message"/></svg>DSH tool call</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="q-body">
+            <div class="q-context">
+              <div class="chat-user">
+                <div class="bubble">把支付回调的幂等补上，先别动数据库。</div>
+              </div>
+              <div class="chat-ai">
+                <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+                <div>
+                  <div class="ai-name">DeepSeek Harness</div>
+                  <div class="ai-text">明白。先确认两个边界，再动手：</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="q-hero">
+              <div class="qcard">
+                <div class="qcard-head"><span>QUESTION 1 OF 2 · NEED YOUR DECISION</span><span class="badge">1 / 2</span></div>
+                <div class="qcard-title">支付回调重复到达时，应该怎么处理？</div>
+                <div class="options">
+                  <div class="option on">
+                    <span class="key">A</span>
+                    <div>
+                      <div class="o-title">按 event_id 去重</div>
+                      <div class="o-desc">重复事件直接返回 200，不重复执行</div>
+                    </div>
+                    <svg class="ic check"><use href="#i-check"/></svg>
+                  </div>
+                  <div class="option">
+                    <span class="key">B</span>
+                    <div>
+                      <div class="o-title">写一张幂等表</div>
+                      <div class="o-desc">事务内判重，保留完整审计</div>
+                    </div>
+                  </div>
+                  <div class="option">
+                    <span class="key">C</span>
+                    <div>
+                      <div class="o-title">只打日志观察</div>
+                      <div class="o-desc">先跑一周，再决定怎么修</div>
+                    </div>
+                  </div>
+                  <div class="option">
+                    <span class="key">D</span>
+                    <div>
+                      <div class="o-title">其他</div>
+                      <div class="o-desc">我来补充约束</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="qcard-foot">
+                  <span class="hint">已选 1 项 · Enter 提交 · 支持多选</span>
+                  <span class="submit">提交答案 <svg class="ic"><use href="#i-arrow"/></svg></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>回答后模型继续这一回合…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-brain"/></svg>Max</span>
+            <span class="pill"><svg class="ic"><use href="#i-hammer"/></svg>Build</span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>答案回到工具调用，不是一个“看起来像提问”的文本块</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">02 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 03 · plan                                                     -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-plan" aria-label="Plan 模式">
+    <div class="fig-row"><span class="fig-box">FIG. 03</span><span class="fig-label">BUILD / PLAN</span></div>
+    <div class="corner-note">先审计划<br>再放它跑</div>
+    <h2>先看计划，<br><span class="marker">再决定要不要跑</span></h2>
+    <p class="lede">
+      计划不是提示词。它以 Paseo 原生的 plan 项展示，<b>批准之后才进入执行</b>；<br>
+      想改就直接说，模型继续改计划。
+    </p>
+
+    <div class="stage">
+      <div class="surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="seg">
+            <span><svg class="ic"><use href="#i-hammer"/></svg>Build</span>
+            <span class="on"><svg class="ic"><use href="#i-map"/></svg>Plan</span>
+          </div>
+          <div class="win-right"><span class="note"><svg class="ic"><use href="#i-lock"/></svg>批准前不会执行</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="plan-body">
+            <div class="plan-context">
+              <svg class="ic"><use href="#i-branch"/></svg>
+              任务：给支付回调补幂等
+              <span class="note" style="margin-left:auto">main · 3 files</span>
+            </div>
+            <div class="plan-panel">
+              <div class="plan-top">
+                <span class="plan-badge"><svg class="ic"><use href="#i-map"/></svg>PLAN</span>
+                <span class="count">4 steps</span>
+                <span class="state"><i></i>等待批准</span>
+              </div>
+              <div class="plan-title">给支付回调补上幂等</div>
+              <div class="plan-sub">不改表结构；写入路径保持单事务 · 预计 3 个文件</div>
+              <ol class="steps">
+                <li class="step done">
+                  <span class="step-no"><svg class="ic" style="width:11px;height:11px"><use href="#i-check"/></svg></span>
+                  <div class="step-body">
+                    <div class="step-t">读回调入口，确认现有重试路径</div>
+                    <div class="step-m">src/payment/callback.ts</div>
+                  </div>
+                </li>
+                <li class="step">
+                  <span class="step-no">2</span>
+                  <div class="step-body">
+                    <div class="step-t">加 event_id 唯一约束与幂等判断</div>
+                    <div class="step-m">迁移 + 事务内判重</div>
+                  </div>
+                </li>
+                <li class="step">
+                  <span class="step-no">3</span>
+                  <div class="step-body">
+                    <div class="step-t">补 3 个回归：重复 / 并发 / 乱序</div>
+                    <div class="step-m">tests/payment/*.spec.ts</div>
+                  </div>
+                </li>
+                <li class="step">
+                  <span class="step-no">4</span>
+                  <div class="step-body">
+                    <div class="step-t">跑测试并更新接入文档</div>
+                    <div class="step-m">pnpm test</div>
+                  </div>
+                </li>
+              </ol>
+              <div class="diff">
+<span class="add">+ const seen = await ledger.claim(event.id)</span><br>
+<span class="add">+ if (!seen) return ack()</span>
+              </div>
+              <div class="plan-actions">
+                <span class="btn btn-primary"><svg class="ic"><use href="#i-check"/></svg>批准并执行</span>
+                <span class="btn btn-ghost2">继续修改</span>
+                <span class="grow"></span>
+                <span class="hint">Plan → Build</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>对计划提意见，或直接批准…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-brain"/></svg>High</span>
+            <span class="pill mode"><svg class="ic"><use href="#i-map"/></svg>Plan</span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>Build / Plan 是 composer 里的开关，不是另一套会话</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">03 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 04 · streaming                                                -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-streaming" aria-label="流式输出">
+    <div class="fig-row"><span class="fig-box">FIG. 04</span><span class="fig-label">STREAMING EVENTS</span></div>
+    <div class="corner-note">文本 / 思考 / 工具<br>按到达顺序进时间线</div>
+    <h2>边生成，<br><span class="marker">边看到</span></h2>
+    <p class="lede">
+      流式输出不是把整段文本一次性丢过来。文本、思考、工具调用按到达顺序进时间线；
+      长任务不用盯着空白等，也不用等整段写完才知道跑没跑通。
+    </p>
+
+    <div class="stage">
+      <div class="surface stream-surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>streaming</div>
+          <div class="win-right"><span class="live">LIVE</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="stream-wrap">
+            <div class="chat-user">
+              <div class="bubble">跑一下测试，挂了就修。</div>
+            </div>
+            <div class="stream-think">
+              <span class="think-label">THINKING</span>
+              <span>先确认测试命令，再看失败的是哪一组。</span>
+            </div>
+            <div class="chat-ai">
+              <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+              <div>
+                <div class="ai-name">DeepSeek Harness</div>
+                <div class="ai-text">先跑 <code>pnpm test</code>，看失败的是哪一组……<span class="block-cursor"></span></div>
+              </div>
+            </div>
+
+            <div class="run-card">
+              <div class="run-head">
+                <span class="run-tool"><svg class="ic"><use href="#i-terminal"/></svg>bash</span>
+                <code>pnpm test</code>
+                <span class="run-status"><i class="spinner"></i>running · 12s</span>
+              </div>
+              <div class="run-bar"><i style="width:62%"></i></div>
+              <div class="run-out">
+                <div><span class="pass">✓</span> payment/callback.spec.ts <span class="dim">8 passed</span></div>
+                <div><span class="fail">✗</span> payment/retry.spec.ts <span class="dim">1 failed</span></div>
+                <div class="stream-line"><span class="dim">→</span> 正在定位失败断言<span class="block-cursor small"></span></div>
+              </div>
+            </div>
+
+            <div class="chat-ai">
+              <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+              <div>
+                <div class="ai-name">DeepSeek Harness</div>
+                <div class="ai-text">retry.spec.ts 挂在并发用例上，我先把具体断言跑出来。<span class="block-cursor"></span></div>
+              </div>
+            </div>
+
+            <div class="stream-meta">
+              <span><svg class="ic"><use href="#i-stream"/></svg>streaming</span>
+              <span>1,284 tokens</span>
+              <span>3 event types</span>
+              <span class="grow"></span>
+              <span class="stop"><svg class="ic"><use href="#i-stop"/></svg>Stop</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>不是“转圈等完再整段吐出来”，是逐块进时间线</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">04 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 05 · attachments + images                                     -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-attachments" aria-label="附件与图片">
+    <div class="fig-row"><span class="fig-box">FIG. 05</span><span class="fig-label">ATTACHMENTS / IMAGES</span></div>
+    <div class="corner-note">图片走模态<br>其它附件走文本引用</div>
+    <h2>拖进来就行，<br><span class="marker">图片和文件都算证据</span></h2>
+    <p class="lede">
+      图片进 DSH 的附件库，按路由模态投递；代码、PDF、review、GitHub 链接降级为文本引用，<br>
+      模型仍能拿到路径或内容，不会因为一个附件不支持就丢掉整条消息。
+    </p>
+
+    <div class="stage">
+      <div class="surface attach-surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>attachments</div>
+          <div class="win-right"><span class="note">TEXT + IMAGE</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="attach-wrap">
+            <div class="attach-head">
+              <span class="attach-label">ATTACHED · 3</span>
+              <span class="attach-hint">素材先进 DSH，再按路由能力投递</span>
+            </div>
+            <div class="attach-strip">
+              <div class="att thumb">
+                <div class="mini-shot">
+                  <div class="mini-bar"><i></i><i></i><i></i></div>
+                  <div class="mini-body">
+                    <div class="mini-502">502</div>
+                    <div class="mini-lines"><i></i><i></i><i></i></div>
+                  </div>
+                </div>
+                <div class="att-meta"><span class="att-name">screenshot.png</span><span class="att-kind">image</span></div>
+              </div>
+              <div class="att file">
+                <div class="att-icon"><svg class="ic"><use href="#i-file"/></svg></div>
+                <div class="att-meta"><span class="att-name">callback.ts</span><span class="att-kind">12 KB · text</span></div>
+              </div>
+              <div class="att file">
+                <div class="att-icon"><svg class="ic"><use href="#i-file"/></svg></div>
+                <div class="att-meta"><span class="att-name">review.json</span><span class="att-kind">3 KB · review</span></div>
+              </div>
+            </div>
+
+            <div class="chat-user">
+              <div class="bubble">这三个是我这轮的全部上下文。</div>
+            </div>
+            <div class="chat-ai">
+              <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+              <div>
+                <div class="ai-name">DeepSeek Harness</div>
+                <div class="ai-text">看到截图里的 502 了；<code>callback.ts:42</code> 的重试没有判重。review 里那条 P1 也指向这里。</div>
+              </div>
+            </div>
+
+            <div class="attach-flow">
+              <span class="flow-box"><svg class="ic"><use href="#i-image"/></svg>image</span>
+              <span class="flow-arrow">→</span>
+              <span class="flow-box">DSH attachment store</span>
+              <span class="flow-arrow">→</span>
+              <span class="flow-box"><svg class="ic"><use href="#i-spark"/></svg>model</span>
+              <span class="flow-note">图片按 input 模态；其余按文本引用</span>
+            </div>
+            <div class="attach-footnote">
+              <span><svg class="ic"><use href="#i-check"/></svg>图片：走 input 模态</span>
+              <span><svg class="ic"><use href="#i-check"/></svg>文件：文本引用，不丢消息</span>
+              <span class="grow"></span>
+              <span class="mono">paseo session · attachments</span>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>再加一张图，或继续追问…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-paperclip"/></svg>Add files</span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-brain"/></svg>High</span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>一个不支持的附件，不再把整个会话拖成 stale</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">05 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 06 · thinking                                                 -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-thinking" aria-label="思考档位">
+    <div class="fig-row"><span class="fig-box">FIG. 06</span><span class="fig-label">THINKING EFFORT</span></div>
+    <div class="corner-note">档位来自 catalog<br>不写死</div>
+    <h2>模型声明几档，<br><span class="marker">菜单就显示几档</span></h2>
+    <p class="lede">
+      档位从 DSH 的 catalog 读，不写死。没声明 <code>max</code> 的模型，菜单里就不会出现
+      <code>max</code>；<br>声明了五档，就显示五档。
+    </p>
+
+    <div class="stage">
+      <div class="surface think-surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>model catalog</div>
+          <div class="win-right"><span class="note">FROM DSH</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="model-strip">
+            <div class="model-pill on">
+              <span class="mi"><svg class="ic"><use href="#i-spark"/></svg></span>
+              <div><div class="n">deepseek-v4-flash</div><div class="s">my-gateway · 5 levels</div></div>
+            </div>
+            <div class="model-pill">
+              <span class="mi"><svg class="ic"><use href="#i-spark"/></svg></span>
+              <div><div class="n">your-other-model</div><div class="s">my-gateway · 3 levels</div></div>
+            </div>
+          </div>
+
+          <div class="chat-ai" style="margin-top:4px">
+            <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+            <div>
+              <div class="ai-name">DeepSeek Harness</div>
+              <div class="ai-text">这个模型声明了 5 档；另一个只有 3 档，菜单会自己变短。</div>
+            </div>
+          </div>
+
+          <div class="think-note">
+            <svg class="ic"><use href="#i-spark"/></svg><b>不发明参数。</b>
+            每个模型的档位来自 DSH catalog；<code>off</code> 留空表示不发送 reasoning 字段。
+          </div>
+
+          <div class="think-menu menu">
+            <div class="menu-head">
+              <span>THINKING EFFORT</span>
+              <span class="badge">deepseek-v4-flash · 5 档</span>
+            </div>
+            <div class="menu-body">
+              <div class="menu-row">
+                <span class="mi"><svg class="ic"><use href="#i-bolt"/></svg></span>
+                <div class="mt"><div class="t">Off</div><div class="d">不发送 reasoning 参数</div></div>
+                <span class="levels zero"><i></i><i></i><i></i><i></i><i></i></span>
+              </div>
+              <div class="menu-row">
+                <span class="mi"><svg class="ic"><use href="#i-brain"/></svg></span>
+                <div class="mt"><div class="t">Low</div><div class="d">快速回答，少想一步</div></div>
+                <span class="levels"><i class="on"></i><i></i><i></i><i></i><i></i></span>
+              </div>
+              <div class="menu-row">
+                <span class="mi"><svg class="ic"><use href="#i-brain"/></svg></span>
+                <div class="mt"><div class="t">Medium</div><div class="d">默认，平衡速度与质量</div></div>
+                <span class="levels"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+              </div>
+              <div class="menu-row on">
+                <span class="mi"><svg class="ic"><use href="#i-brain"/></svg></span>
+                <div class="mt"><div class="t">High</div><div class="d">复杂改动，先想清楚</div></div>
+                <span class="levels"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+                <span class="right"><svg class="ic" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
+              </div>
+              <div class="menu-row">
+                <span class="mi"><svg class="ic"><use href="#i-brain"/></svg></span>
+                <div class="mt"><div class="t">Max</div><div class="d">最慢，留给真正难的问题</div></div>
+                <span class="levels"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+              </div>
+            </div>
+            <div class="menu-foot">catalog → paseo/config/set · 切档位不需要重启会话</div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>给 agent 发消息…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill active"><svg class="ic"><use href="#i-brain"/></svg>High <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-hammer"/></svg>Build</span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>每个模型真实声明的档位，才是 UI 里能选的档位</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">06 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 07 · standard preset / expert mode                           -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-expert" aria-label="标准专家模式">
+    <div class="fig-row"><span class="fig-box">FIG. 07</span><span class="fig-label">STANDARD PRESET</span></div>
+    <div class="corner-note">完整工具链<br>不是最小集</div>
+    <h2>DSH 的 standard 预设，<br><span class="marker">原样跑</span></h2>
+    <p class="lede">
+      不是把工具砍到最小集。标准专家模式（<code>standard</code>）带完整工具链：
+      bash、文件读写、搜索、Plan、技能、goal、子代理；Preset 下拉里选，首回合后锁定。
+    </p>
+
+    <div class="stage">
+      <div class="surface preset-surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>agent preset</div>
+          <div class="win-right"><span class="note">DSH / AGENT PRESET</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="preset-head">
+            <span>DSH BUILT-IN PRESETS</span>
+            <span>建会话时选 · 首回合后锁定</span>
+          </div>
+          <div class="preset-layout">
+            <div class="preset-menu menu">
+              <div class="menu-head">
+                <span>AGENT PRESET</span>
+                <span class="badge">建会话时选</span>
+              </div>
+              <div class="menu-body">
+                <div class="menu-row on">
+                  <span class="mi"><svg class="ic"><use href="#i-layers"/></svg></span>
+                  <div class="mt"><div class="t">standard <span class="tag">推荐</span></div><div class="d">完整专家工具链 · bash / fs / plan / skills / subagent</div></div>
+                  <span class="right"><svg class="ic" style="width:14px;height:14px"><use href="#i-check"/></svg></span>
+                </div>
+                <div class="menu-row">
+                  <span class="mi"><svg class="ic"><use href="#i-bolt"/></svg></span>
+                  <div class="mt"><div class="t">minimal</div><div class="d">极简工具集，适合快速问答</div></div>
+                  <span class="right">2 tools</span>
+                </div>
+                <div class="menu-row">
+                  <span class="mi"><svg class="ic"><use href="#i-terminal"/></svg></span>
+                  <div class="mt"><div class="t">ptc</div><div class="d">工具调用走代码呈现</div></div>
+                  <span class="right">code</span>
+                </div>
+              </div>
+              <div class="menu-foot">首个回合后锁定 · 与 DSH 自身的语义一致</div>
+            </div>
+
+            <div class="preset-includes">
+              <div class="inc-head">STANDARD 包含</div>
+              <ul class="inc-list">
+                <li><svg class="ic"><use href="#i-check"/></svg><span>bash / pwsh</span></li>
+                <li><svg class="ic"><use href="#i-check"/></svg><span>文件读写与搜索</span></li>
+                <li><svg class="ic"><use href="#i-check"/></svg><span>Plan 模式</span></li>
+                <li><svg class="ic"><use href="#i-check"/></svg><span>技能与命令</span></li>
+                <li><svg class="ic"><use href="#i-check"/></svg><span>goal / 子代理</span></li>
+                <li><svg class="ic"><use href="#i-check"/></svg><span>思考档位与权限</span></li>
+              </ul>
+              <div class="inc-note">工具按 DSH 的 standard 预设原样注册，插件只做桥接。</div>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>用 standard 起一个新会话…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-brain"/></svg>Max</span>
+            <span class="pill active"><svg class="ic"><use href="#i-layers"/></svg>standard <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>不是“能接上就行”，是把 DSH 的 standard 预设完整搬过来</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">07 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 08 · doctor                                                   -->
+  <!-- ============================================================ -->
+  <section class="scene scene-feature scene-doctor" aria-label="doctor 自检">
+    <div class="fig-row"><span class="fig-box">FIG. 08</span><span class="fig-label">DOCTOR / PROBE</span></div>
+    <div class="corner-note">只读检查<br>不改任何文件</div>
+    <h2>装完别猜，<br><span class="marker">先让 doctor 跑一遍</span></h2>
+    <p class="lede">
+      只读检查 CLI、profile、bridge、路由和 key；缺什么直接说，全绿再重启 daemon。<br>
+      不确定端点能力，再用 <code>probe</code> 打过去。
+    </p>
+
+    <div class="stage">
+      <div class="surface doctor-surface">
+        <div class="surface-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>paseo-dsh doctor</b></div>
+          <div class="win-tab"><span class="dot"></span>read-only</div>
+          <div class="win-right"><span class="note">NO CHANGES</span></div>
+        </div>
+        <div class="surface-body">
+          <div class="doctor-stack">
+          <div class="doctor-badge"><svg class="ic"><use href="#i-check"/></svg>ALL CHECKS PASSED</div>
+          <div class="terminal">
+            <div class="term-bar">
+              <div class="dots"><i></i><i></i><i></i></div>
+              <div class="title">paseo-dsh doctor</div>
+              <div class="right">zsh · 80×24</div>
+            </div>
+            <div class="term-body">
+              <div class="cmd"><span class="dollar">$</span>npx paseo-dsh doctor</div>
+              <div class="muted">paseo-dsh doctor  (plugin 0.2.10)</div>
+              <div><span class="ok">[ok]</span> <span class="label">dsh 0.2.1-rc.2</span></div>
+              <div><span class="ok">[ok]</span> <span class="label">paseo 0.13.2</span></div>
+              <div><span class="ok">[ok]</span> <span class="label">DSH profile at ~/.dsh/profiles/paseo</span></div>
+              <div><span class="ok">[ok]</span> <span class="label">bridge bundle provisioned</span></div>
+              <div><span class="ok">[ok]</span> <span class="label">model route configured</span></div>
+              <div class="detail indent">default: my-gateway / deepseek-v4-flash</div>
+              <div><span class="ok">[ok]</span> <span class="label">credential MY_GATEWAY_API_KEY found</span></div>
+              <div class="gap"></div>
+              <div class="success"><b>All checks passed.</b> <span class="next">New a session in Paseo with provider "DeepSeek Harness (native)".</span></div>
+            </div>
+          </div>
+          <div class="doctor-next">
+            <span class="next-label">NEXT</span>
+            <code>npx paseo-dsh probe --base-url … --model …</code>
+            <span>不确定端点能力时，打过去看真实档位</span>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>doctor 查安装完整性；probe 查端点真实能力</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">08 / 08</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- hero · 1600x900                                               -->
+  <!-- ============================================================ -->
+  <section class="scene scene-hero" aria-label="README hero">
+    <div class="brand hero-brand">
+      <div class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></div>
+      <div>
+        <div class="brand-name">paseo-dsh</div>
+        <div class="brand-sub">A NATIVE PROVIDER / FIELD NOTES</div>
+      </div>
+    </div>
+
+    <div class="hero-meta meta-right">
+      <span class="issue">NO. 01 / 08</span><br>
+      OPEN SOURCE · MIT<br>
+      PASEO 0.9.2+ / DSH 0.2.x
+    </div>
+
+    <div class="hero-kicker kicker">
+      <span class="rule"></span>
+      <span>PASEO × DEEPSEEK HARNESS</span>
+      <span class="sep"></span>
+      <span>原生接入，不是 ACP</span>
+    </div>
+
+    <h1 class="hero-title">
+      DeepSeek Harness<br>
+      接进 <span class="marker">Paseo</span>
+    </h1>
+
+    <p class="hero-lede">
+      <b>原生 provider，不是 ACP。</b>提问卡片、Plan、思考档位、流式输出、附件与图片，<br>
+      全部走 Paseo 自己的协议。
+    </p>
+
+    <div class="install hero-install">
+      <span class="prompt">$</span>
+      <code>paseo plugin add npm:paseo-dsh</code>
+      <span class="copy"><svg class="ic"><use href="#i-copy"/></svg></span>
+    </div>
+
+    <div class="chips hero-chips">
+      <span class="chip hot"><svg class="ic"><use href="#i-stream"/></svg>流式输出</span>
+      <span class="chip forest"><svg class="ic"><use href="#i-paperclip"/></svg>附件 / 图片</span>
+      <span class="chip mustard"><svg class="ic"><use href="#i-layers"/></svg>标准专家模式</span>
+      <span class="chip"><svg class="ic"><use href="#i-message"/></svg>原生提问卡片</span>
+      <span class="chip"><svg class="ic"><use href="#i-map"/></svg>Build / Plan</span>
+    </div>
+
+    <div class="hero-stage">
+      <div class="window">
+        <div class="win-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="win-title"><b>Paseo</b></div>
+          <div class="win-tab"><span class="dot"></span>DeepSeek Harness (native)</div>
+          <div class="win-right"><span>paseo-dsh</span><span class="btn-ghost">Commit</span></div>
+        </div>
+        <div class="win-body">
+          <div class="chat-user">
+            <div class="bubble">把支付回调的幂等补上，先别动数据库。</div>
+          </div>
+          <div class="chat-ai">
+            <div class="avatar"><svg class="ic"><use href="#i-logo"/></svg></div>
+            <div>
+              <div class="ai-name">DeepSeek Harness</div>
+              <div class="ai-text">明白。先确认一个边界：</div>
+            </div>
+          </div>
+          <div class="toolrow">
+            <span class="tool"><svg class="ic"><use href="#i-command"/></svg>ask_user_question</span>
+            <span class="tool"><span class="ok">1</span> / 2 questions</span>
+          </div>
+          <div class="qcard">
+            <div class="qcard-head"><span>NEED YOUR DECISION</span><span class="badge">1 / 2</span></div>
+            <div class="qcard-title">重复回调应该怎么处理？</div>
+            <div class="options">
+              <div class="option on">
+                <span class="key">A</span>
+                <div><div class="o-title">按 event_id 去重</div><div class="o-desc">重复事件直接返回 200</div></div>
+                <svg class="ic check"><use href="#i-check"/></svg>
+              </div>
+              <div class="option">
+                <span class="key">B</span>
+                <div><div class="o-title">写一张幂等表</div><div class="o-desc">事务内判重，保留完整审计</div></div>
+              </div>
+              <div class="option">
+                <span class="key">C</span>
+                <div><div class="o-title">只打日志观察</div><div class="o-desc">先跑一周再决定</div></div>
+              </div>
+            </div>
+            <div class="qcard-foot">
+              <span class="hint">A / B / C 选择 · Enter 提交</span>
+              <span class="submit">提交 <svg class="ic"><use href="#i-arrow"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-input"><span>给 agent 发消息…</span><span class="caret"></span></div>
+          <div class="composer-row">
+            <span class="round-btn"><svg class="ic"><use href="#i-plus"/></svg></span>
+            <span class="pill model"><svg class="ic"><use href="#i-spark"/></svg>DeepSeek-V4.1 <svg class="ic"><use href="#i-chev"/></svg></span>
+            <span class="pill"><svg class="ic"><use href="#i-brain"/></svg>Max</span>
+            <span class="pill"><svg class="ic"><use href="#i-hammer"/></svg>Build</span>
+            <span class="spacer"></span>
+            <span class="pill"><svg class="ic"><use href="#i-layers"/></svg>standard</span>
+            <span class="pill"><svg class="ic"><use href="#i-shield"/></svg>workspace-write</span>
+            <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-caption">
+      <span>FIG. A — A REAL SESSION IN PASEO</span>
+      <span>question card · plan · streaming · attachments · standard preset</span>
+    </div>
+
+    <div class="foot">
+      <div class="left"><span class="status"></span>github.com/liuxing7954/paseo-dsh</div>
+      <div class="right">
+        <svg class="barcode" viewBox="0 0 64 14" aria-hidden="true"><rect x="0" width="2" height="14"/><rect x="4" width="1" height="14"/><rect x="7" width="3" height="14"/><rect x="12" width="1" height="14"/><rect x="15" width="2" height="14"/><rect x="19" width="4" height="14"/><rect x="25" width="1" height="14"/><rect x="28" width="2" height="14"/><rect x="32" width="3" height="14"/><rect x="37" width="1" height="14"/><rect x="40" width="2" height="14"/><rect x="44" width="4" height="14"/><rect x="50" width="1" height="14"/><rect x="53" width="2" height="14"/><rect x="57" width="3" height="14"/><rect x="62" width="1" height="14"/></svg>
+        <span class="idx">PASEO-DSH · 0.2.10</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    document.body.dataset.scene = params.get('scene') || 'cover';
+  })();
+</script>
+</body>
+</html>
