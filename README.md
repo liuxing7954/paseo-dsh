@@ -352,6 +352,7 @@ patch 是本插件自己的发布计数；完整提交记录见
 
 | 版本 | 日期 | 更新内容 |
 | --- | --- | --- |
+| [0.2.18](https://www.npmjs.com/package/paseo-dsh/v/0.2.18) | 2026-11-12 | **对话 rewind**：用户消息旁出现回退按钮；DSH 侧按事件边界 fork 新会话，Paseo 重开截断后的历史，工作区文件不动；只支持 conversation，`files` / `both` 会明确失败。<br>**DSH 0.2.2 子代理**：bridge 转发 `parentSessionId` / `origin` / `cwd`，Paseo 把 DSH subagent 作为子会话显示，带 `toolCallId`、回合状态、timeline 与 todo 状态；权限标签改用 DSH 显示名，取消的子回合标为 `canceled`。<br>需要 Paseo 0.15.x 与 DSH `0.2.2-rc.1`（Node ≥ 24.9）。 |
 | [0.2.17](https://www.npmjs.com/package/paseo-dsh/v/0.2.17) | 2026-10-30 | **统计行重新贴合页脚**：按页脚实际绘制的位置测量并贴齐，原生皮肤下「最新回合」和「被新回合顶下去」两种状态都稳定在约 4.5px 间距；字号统一为页脚同款 13px。量不到、找不到页脚或间距超出合理范围时退回宿主间距，native 不补偿；第三方主题的位置仍由主题自己控制。 |
 | [0.2.16](https://www.npmjs.com/package/paseo-dsh/v/0.2.16) | 2026-10-28 | **统计行回到默认位置**：移除 0.2.15 里的自动贴靠、DOM 测量与设置页，只保留内容显示（轮/步、首字、tok/s、上下文、缓存命中，点开展开明细）。位置交还给 Paseo 和主题，不再随展开/收起或换主题移动。`0.2.15` 已标记 deprecated。 |
 | [0.2.15](https://www.npmjs.com/package/paseo-dsh/v/0.2.15) | 2026-10-28 | **统计行贴合回合页脚**：统计行与「复制 / 模型 / 时间 / 耗时」页脚的间距在默认主题和主题插件下保持一致；回合完成时给最后一行打 `final`，web 端实测页脚的实际位置再贴齐，native 用常量回退。<br>**可配置**：Settings → Plugins →「回答统计行」可调间距（0–24px，默认 6）与字号（10–16px，默认 13）；未保存设置时行为与之前完全一致。<br>**字号与数字**：默认对齐页脚的 13px，数字等宽不跳动。 |
