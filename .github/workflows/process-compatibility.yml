@@ -1,0 +1,34 @@
+name: Process compatibility
+on:
+  push:
+    branches: [fix/windows-dsh-launch]
+  pull_request:
+    paths:
+      - "paseo-plugin/server/dsh-*"
+      - "paseo-plugin/lib/doctor.mjs"
+      - "paseo-plugin/test/**"
+      - "paseo-plugin/package*.json"
+      - ".github/workflows/process-compatibility.yml"
+permissions:
+  contents: read
+jobs:
+  process:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: paseo-plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: paseo-plugin/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund --replace-registry-host=always --registry=https://registry.npmjs.org/
+      - run: npm run typecheck
+      - run: npm run test:process
+
