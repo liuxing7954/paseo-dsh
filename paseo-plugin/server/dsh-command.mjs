@@ -38,4 +38,3 @@ export function resolveDshCommand(binary, env = process.env, cwd = process.cwd()
   }
   return unchanged;
 }
-

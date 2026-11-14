@@ -169,4 +169,3 @@ test("doctor tries the explicit PASEO_CLI executable before PATH discovery", t =
   assert.ok(result.stdout.includes(`paseo ${process.version}`), result.stdout);
   assert.doesNotMatch(result.stdout, /paseo CLI version not checked/);
 });
-

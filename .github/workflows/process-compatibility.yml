@@ -31,4 +31,3 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund --replace-registry-host=always --registry=https://registry.npmjs.org/
       - run: npm run typecheck
       - run: npm run test:process
-

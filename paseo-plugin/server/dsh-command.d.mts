@@ -5,4 +5,3 @@ export function resolveDshCommand(
   env?: ProcessEnv,
   cwd?: string,
 ): { command: string; args: string[] };
-
