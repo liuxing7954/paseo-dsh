@@ -49,6 +49,29 @@ The Windows desktop validation used Paseo 0.15.4 without better-paseo. That
 third-party plugin was not tested; no compatibility claim is made for its
 layout or grouping overrides.
 
+## Visual evidence
+
+These are actual Paseo 0.15.4 window captures, limited to the test transcript
+region to omit unrelated projects, accounts and the composer. They are not
+mockups. Both examples read a disposable `check.txt` containing
+`PTC verification: 42`.
+
+The before captures replay a recorded DSH turn through the unmodified upstream
+`TimelineBuilder`. The after captures are a separate live Gemini/PTC turn with
+the candidate display code; model wording and timing therefore differ. On
+Windows the live test also needs the independent launcher fix from #10, which
+is not included in this PR. A notice about partial host sandbox enforcement is
+already part of DSH's tool output and is simply reproduced here.
+
+| State | Before | After |
+| --- | --- | --- |
+| Overview / details collapsed | ![Native Overview](timeline-display/before-overview.png) | ![Concise DSH rows](timeline-display/after-overview.png) |
+| Opened disclosures | ![Native tool-count group opened](timeline-display/before-expanded.png) | ![Reasoning and program details opened](timeline-display/after-expanded.png) |
+
+Opening the native group reveals the generic `Thinking` and `Run code` rows.
+With the candidate, the reasoning preview and model-authored description are
+already visible before opening either disclosure.
+
 ## Checks
 
 Run `npm run typecheck` and `npm run test:timeline` inside `paseo-plugin`.
