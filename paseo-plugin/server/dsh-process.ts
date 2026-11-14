@@ -9,6 +9,7 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
+import { resolveDshCommand } from "./dsh-command.mjs";
 
 /** Provider/model/thinking route pinned for the life of one process. */
 export interface DshRoute {
@@ -158,14 +159,10 @@ export interface DshProcessOptions extends DshProcessHandlers {
   initializeRoute?: boolean;
 }
 
-const BINARY_CANDIDATES = [
-  process.env.DSH_BINARY,
-  "dsh",
-  `${process.env.HOME ?? ""}/.local/bin/dsh`,
-].filter((value): value is string => typeof value === "string" && value.length > 0);
-
-function resolveBinary(): string {
-  for (const candidate of BINARY_CANDIDATES) {
+function resolveBinary(env: NodeJS.ProcessEnv): string {
+  const candidates = [env.DSH_BINARY, "dsh", `${env.HOME ?? ""}/.local/bin/dsh`]
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  for (const candidate of candidates) {
     if (candidate.includes("/") && existsSync(candidate)) return candidate;
     if (!candidate.includes("/")) return candidate;
   }
@@ -205,10 +202,12 @@ export class DshProcess {
   }
 
   async #start(): Promise<void> {
-    const child = spawn(resolveBinary(), ["--profile", process.env.DSH_PASEO_PROFILE ?? "paseo"], {
+    const env = { ...process.env, ...this.#options.env };
+    const launch = resolveDshCommand(resolveBinary(env), env, this.#options.cwd);
+    const child = spawn(launch.command, [...launch.args, "--profile", env.DSH_PASEO_PROFILE ?? "paseo"], {
       cwd: this.#options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...this.#options.env },
+      env,
     });
     this.#child = child;
 

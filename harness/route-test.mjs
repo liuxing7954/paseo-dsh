@@ -15,13 +15,15 @@
  *   DSH_PASEO_PROFILE=my-profile node harness/route-test.mjs
  */
 import { spawn } from 'node:child_process';
+import { resolveDshCommand } from '../paseo-plugin/server/dsh-command.mjs';
 
 const PROFILE = process.env.DSH_PASEO_PROFILE ?? 'paseo';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Spawn one bridge process and return JSON-RPC plus a raw event sink. */
 function bridge(onEvent) {
-  const child = spawn('dsh', ['--profile', PROFILE], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'] });
+  const launch = resolveDshCommand(process.env.DSH_BINARY ?? 'dsh', process.env, process.cwd());
+  const child = spawn(launch.command, [...launch.args, '--profile', PROFILE], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   let buffer = '';
   const pending = new Map();
   let nextId = 1;
@@ -42,6 +44,7 @@ function bridge(onEvent) {
       if (frame.id !== undefined && pending.has(frame.id)) {
         const entry = pending.get(frame.id);
         pending.delete(frame.id);
+        clearTimeout(entry.timer);
         if (frame.error) entry.reject(new Error(frame.error.message));
         else entry.resolve(frame.result);
       }
@@ -54,11 +57,11 @@ function bridge(onEvent) {
     request: (method, params) =>
       new Promise((resolve, reject) => {
         const id = nextId++;
-        pending.set(id, { resolve, reject });
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           if (pending.delete(id)) reject(new Error('timeout'));
         }, 90000);
+        pending.set(id, { resolve, reject, timer });
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
       }),
   };
 }
@@ -78,6 +81,7 @@ async function listRoutes() {
 async function tryRoute({ provider, model }) {
   let text = '';
   let failure = null;
+  let ended = false;
   const { child, request } = bridge((event) => {
     if (event.type === 'assistant/attempt') {
       for (const record of event.data.stream ?? []) {
@@ -88,6 +92,10 @@ async function tryRoute({ provider, model }) {
         }
       }
     }
+    if (event.type === 'assistant/message') {
+      text += (event.data.message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('');
+    }
+    if (event.type === 'turn/end') ended = true;
     if (event.type === 'turn/end' && event.data.reason?.kind === 'error') {
       failure = event.data.reason.error?.message ?? 'error';
     }
@@ -98,7 +106,9 @@ async function tryRoute({ provider, model }) {
       sessionId: `route-${Date.now()}`,
       contentBlocks: [{ type: 'text', text: 'Reply with exactly: PONG' }],
     });
-    await sleep(25000);
+    const deadline = Date.now() + 60000;
+    while (!ended && Date.now() < deadline) await sleep(100);
+    if (!ended) failure ??= 'turn timed out';
   } catch (error) {
     failure ??= error.message;
   }
@@ -117,6 +127,7 @@ console.log(`profile "${PROFILE}": ${routes.length} route(s)\n`);
 for (const route of routes) {
   const result = await tryRoute(route);
   const verdict = result.text ? 'WORKS ' : 'FAILS ';
+  if (!result.text || result.failure) process.exitCode = 1;
   console.log(
     `${verdict} ${result.provider}/${result.model}  text=${JSON.stringify(result.text)}  err=${result.failure ?? '-'}`,
   );

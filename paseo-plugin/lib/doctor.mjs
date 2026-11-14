@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveDshCommand } from "../server/dsh-command.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +42,10 @@ function run(cmd, args) {
 
 function findPaseo() {
   // Prefer the app-bundled CLI: a `paseo` on PATH is often a stale npm install.
+  if (process.env.PASEO_CLI) {
+    const version = run(process.env.PASEO_CLI, ["--version"]);
+    if (version !== undefined) return { cmd: process.env.PASEO_CLI, version };
+  }
   const bundled = "/Applications/Paseo.app/Contents/Resources/bin/paseo";
   if (existsSync(bundled)) {
     const v = run(bundled, ["--version"]);
@@ -72,7 +77,8 @@ export function runDoctor() {
   process.stdout.write(`\n${DIM}paseo-dsh doctor  (plugin ${pluginVersion})${RESET}\n\n`);
 
   // 1. CLIs
-  const dshVersion = run("dsh", ["--version"]);
+  const dsh = resolveDshCommand(process.env.DSH_BINARY ?? "dsh");
+  const dshVersion = run(dsh.command, [...dsh.args, "--version"]);
   if (dshVersion === undefined) {
     report("fail", "dsh on PATH", "install the official DeepSeek Harness and put `dsh` on the daemon's PATH");
   } else {
@@ -88,7 +94,13 @@ export function runDoctor() {
 
   const paseo = findPaseo();
   if (paseo === undefined) {
-    report("fail", "paseo CLI not found", "expected `paseo` on PATH or /Applications/Paseo.app");
+    report(
+      process.platform === "win32" ? "warn" : "fail",
+      "paseo CLI version not checked",
+      process.platform === "win32"
+        ? "the Windows desktop app can run without a PATH CLI; verify its version in the app (Paseo >= 0.9.2)"
+        : "expected `paseo` on PATH, PASEO_CLI, or /Applications/Paseo.app",
+    );
   } else if (Number(paseo.version.match(/\d+\.(\d+)/)?.[1] ?? 0) < 9) {
     report("warn", `paseo ${paseo.version}`, "needs Paseo >= 0.9.2 for the direct provider plugin API");
   } else {
