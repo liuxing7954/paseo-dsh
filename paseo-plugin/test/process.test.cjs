@@ -159,3 +159,14 @@ test("doctor still fails for a missing DSH executable", t => {
   assert.match(result.stdout, /fail[^\n]*dsh on PATH/);
 });
 
+test("doctor tries the explicit PASEO_CLI executable before PATH discovery", t => {
+  const f = fixture(t);
+  // Node is a portable native executable with a deterministic --version reply.
+  // It stands in for the caller-supplied CLI; no globally installed Paseo is needed.
+  const result = spawnSync(process.execPath, [resolve(__dirname, "../bin/paseo-dsh.mjs"), "doctor"], {
+    env: { ...f.env, DSH_HOME: f.dir, PASEO_CLI: process.execPath }, encoding: "utf8", timeout: 10000,
+  });
+  assert.ok(result.stdout.includes(`paseo ${process.version}`), result.stdout);
+  assert.doesNotMatch(result.stdout, /paseo CLI version not checked/);
+});
+

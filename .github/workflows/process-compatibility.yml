@@ -1,7 +1,7 @@
 name: Process compatibility
 on:
   push:
-    branches: [fix/windows-dsh-launch]
+    branches: [fix/windows-dsh-launch, fix/windows-launcher-doctor]
   pull_request:
     paths:
       - "paseo-plugin/server/dsh-*"
