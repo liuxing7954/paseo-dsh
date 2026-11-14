@@ -8,4 +8,6 @@ Composer features are passed to DSH rather than emulated. Attached images are ad
 
 Images flow one way. The model receives attached images, but Paseo's transcript renders an image only from an `https://` Markdown URL, so a picture produced on the daemon has to be published to a URL first. Local paths, `file://` URIs and base64 data URLs do not display.
 
+Reasoning returned by DSH appears as a collapsed one-line preview; expand it to read the full text. Each PTC `run_code` call shows the model's description and execution status on one line, with code and output available on expand. Internal file and shell operations stay out of the transcript. These rows display existing DSH events and do not request or generate additional reasoning.
+
 Known limits: there is one `dsh` process per session, so each agent costs a process. Reloading the plugin or restarting the daemon ends a running turn, and the session has to be resumed. The provider id is `deepseek-harness-native`, which keeps it separate from an ACP `deepseek-harness` provider when both are installed. Windows and native iOS and Android clients are untested.

@@ -7,5 +7,6 @@ declare module "react-native" {
   export const View: any;
   export const Text: any;
   export const Pressable: any;
+  export const ScrollView: any;
   export const Platform: { OS: "ios" | "android" | "web" | "windows" | "macos" };
 }

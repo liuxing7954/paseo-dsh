@@ -35,6 +35,7 @@ import {
   type DshUsage,
 } from "./dsh-process";
 import { TimelineBuilder } from "./timeline";
+import type { ActivityStatus } from "../shared/work-display";
 
 /** Modes Paseo offers in the composer. `plan` drives DSH's plan-mode service. */
 export const MODES: ProviderMode[] = [
@@ -267,7 +268,7 @@ export class DshSession {
         clearTimeout(this.#usageRefreshTimer);
         // A dead runtime must not keep writing more of the answer; the failure
         // below is the last word on this session.
-        this.#clearLive();
+        this.#finishDisplay("failed");
         this.#options.emit({
           type: "session.runtime_failed",
           sessionId: this.id,
@@ -857,13 +858,14 @@ export class DshSession {
   async interrupt(): Promise<void> {
     this.#turnInterrupted = true;
     this.#flushLive();
-    this.#clearLive();
+    this.#finishDisplay("canceled");
     await this.#require().cancel();
   }
 
   /** Release the process. */
   async close(): Promise<void> {
     if (this.#closed) return;
+    this.#finishDisplay("canceled");
     this.#closed = true;
     clearTimeout(this.#usageRefreshTimer);
     for (const child of this.#children.values()) {
@@ -1134,6 +1136,7 @@ export class DshSession {
 
   /** Mark the current turn completed once its text is fully visible. */
   #completeTurn(): void {
+    this.#finishDisplay(this.#turnInterrupted ? "canceled" : "completed");
     if (this.#turnId !== null) {
       const turnId = this.#turnId;
       this.#turnId = null;
@@ -1220,7 +1223,10 @@ export class DshSession {
     if (event.type === "tool/call" || event.type === "tool/result") this.#trackToolEvent(event);
     // The live text already reached the same row; the durable message is the
     // authoritative final snapshot and simply replaces it.
-    if (event.type === "assistant/message") this.#flushLive();
+    if (event.type === "assistant/message") {
+      this.#flushLive();
+      this.#clearLive();
+    }
     for (const item of this.#timeline.consume(event)) this.#emitItem(item);
     if (event.type === "assistant/message") {
       this.#accumulateTotals(isRecord(event.data) ? event.data : {});
@@ -1408,7 +1414,9 @@ export class DshSession {
     if (live === undefined || live.attemptId !== frame.attemptId) return;
     if (frame.type === "end") {
       this.#flushLive();
-      this.#clearLive();
+      // Abandoned attempts have no authoritative assistant message. Keep the
+      // row pending until a retry or the actual turn outcome settles it.
+      this.#clearLive(frame.outcome?.kind === "abandoned" ? "running" : "completed");
       if (this.#streamStats !== undefined) this.#streamStats.endedAt = Date.now();
       return;
     }
@@ -1447,11 +1455,7 @@ export class DshSession {
     // order; otherwise the late reasoning item would land below the answer.
     if (live.reasoning !== "" && live.reasoning !== live.emittedReasoning) {
       live.emittedReasoning = live.reasoning;
-      this.#emitItem({
-        type: "reasoning",
-        id: `reasoning:${live.turn}:${live.step}`,
-        text: live.reasoning,
-      });
+      for (const item of this.#timeline.reasoning(live.turn, live.step, live.reasoning, "running")) this.#emitItem(item);
     }
     if (live.text === "" || live.text === live.emitted) return;
     live.emitted = live.text;
@@ -1462,11 +1466,19 @@ export class DshSession {
     });
   }
 
-  /** Forget the live buffer without flushing it (interrupt, exit, close). */
-  #clearLive(): void {
+  /** Drop the live buffer and publish its reasoning status without more text. */
+  #clearLive(status: ActivityStatus = "completed"): void {
     const live = this.#live;
     if (live?.timer !== undefined) clearTimeout(live.timer);
+    if (live !== undefined) {
+      for (const item of this.#timeline.reasoning(live.turn, live.step, live.reasoning, status)) this.#emitItem(item);
+    }
     this.#live = undefined;
+  }
+
+  #finishDisplay(status: Exclude<ActivityStatus, "running">): void {
+    this.#clearLive(status);
+    for (const item of this.#timeline.finishPending(status)) this.#emitItem(item);
   }
 
   /**
