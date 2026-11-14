@@ -7,9 +7,11 @@
  *   DSH_PASEO_PROFILE=my-profile node harness/catalog.mjs
  */
 import { spawn } from 'node:child_process';
+import { resolveDshCommand } from '../paseo-plugin/server/dsh-command.mjs';
 
 const PROFILE = process.env.DSH_PASEO_PROFILE ?? 'paseo';
-const child = spawn('dsh', ['--profile', PROFILE], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'] });
+const launch = resolveDshCommand(process.env.DSH_BINARY ?? 'dsh', process.env, process.cwd());
+const child = spawn(launch.command, [...launch.args, '--profile', PROFILE], { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 let buffer = '';
 const pending = new Map();
 let nextId = 1;
@@ -29,6 +31,7 @@ child.stdout.on('data', (chunk) => {
     if (f.id !== undefined && pending.has(f.id)) {
       const entry = pending.get(f.id);
       pending.delete(f.id);
+      clearTimeout(entry.timer);
       if (f.error) entry.reject(new Error(f.error.message));
       else entry.resolve(f.result);
     }
@@ -39,9 +42,9 @@ child.stderr.on('data', () => {});
 const request = (method, params) =>
   new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => pending.delete(id) && reject(new Error('timeout')), 90000);
+    pending.set(id, { resolve, reject, timer });
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
-    setTimeout(() => pending.delete(id) && reject(new Error('timeout')), 90000);
   });
 
 try {

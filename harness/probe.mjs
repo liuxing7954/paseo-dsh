@@ -13,8 +13,10 @@
  */
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { resolveDshCommand } from '../paseo-plugin/server/dsh-command.mjs';
 
-const RAW = new URL('./frames-probe.jsonl', import.meta.url).pathname;
+const RAW = fileURLToPath(new URL('./frames-probe.jsonl', import.meta.url));
 const rawOut = createWriteStream(RAW);
 
 const SESSION_ID = `probe-${Date.now()}`;
@@ -24,10 +26,12 @@ const PROMPT =
 
 const PROFILE = process.env.DSH_PASEO_PROFILE ?? 'paseo';
 
-const child = spawn('dsh', ['--profile', PROFILE], {
+const launch = resolveDshCommand(process.env.DSH_BINARY ?? 'dsh', process.env, process.cwd());
+const child = spawn(launch.command, [...launch.args, '--profile', PROFILE], {
   cwd: process.cwd(),
   stdio: ['pipe', 'pipe', 'pipe'],
   env: process.env,
+  windowsHide: true,
 });
 
 const pending = new Map();
@@ -44,11 +48,11 @@ function send(frame) {
 function request(method, params) {
   const id = nextId++;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    send({ jsonrpc: '2.0', id, method, params });
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (pending.delete(id)) reject(new Error(`timeout: ${method}`));
     }, 180000);
+    pending.set(id, { resolve, reject, timer });
+    send({ jsonrpc: '2.0', id, method, params });
   });
 }
 
@@ -89,6 +93,7 @@ function handleFrame(frame) {
   if (frame.id !== undefined && pending.has(frame.id)) {
     const entry = pending.get(frame.id);
     pending.delete(frame.id);
+    clearTimeout(entry.timer);
     if (frame.error) entry.reject(new Error(`${frame.error.message}`));
     else entry.resolve(frame.result);
   }
@@ -121,6 +126,10 @@ async function main() {
   log('initialize ->', JSON.stringify(init));
 
   log('\n--- session/prompt ---');
+  // PTC needs a working sandbox on the test host. This is a per-session choice
+  // for this disposable probe, not an edit to the user's permission defaults.
+  await request('paseo/commands', { sessionId: SESSION_ID });
+  await request('paseo/command/run', { sessionId: SESSION_ID, name: 'permission', arguments: 'danger-full-access' });
   const promptResult = await request('session/prompt', {
     sessionId: SESSION_ID,
     contentBlocks: [{ type: 'text', text: PROMPT }],
@@ -130,7 +139,7 @@ async function main() {
   // Wait for the question round trip and the turn to settle.
   const deadline = Date.now() + 150000;
   while (Date.now() < deadline && questions.length === 0) await sleep(500);
-  if (questions.length === 0) log('!! no paseo/question arrived');
+  if (questions.length === 0) throw new Error('no paseo/question arrived');
 
   await sleep(20000);
 
