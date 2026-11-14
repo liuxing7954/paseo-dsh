@@ -33,12 +33,14 @@
     "OVERVIEW.md",
     "LICENSE",
     "index.client.tsx",
-    "client/"
+    "client/",
+    "shared/"
   ],
   "scripts": {
     "generate": "node scripts/generate-bridge-assets.mjs",
     "prepack": "node scripts/generate-bridge-assets.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:timeline": "node --test test/timeline.test.cjs test/session-display.test.cjs"
   },
   "peerDependencies": {
     "@getpaseo/plugin": ">=0.9.2"

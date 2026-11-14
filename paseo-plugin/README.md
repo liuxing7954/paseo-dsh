@@ -31,6 +31,9 @@ What you get that the ACP boundary can't carry:
 - `ask_user_question` → real Paseo question cards
 - Build / Plan mode, with the plan shown before approval
 - Thinking effort rendered from each model's actually-declared levels
+- Returned reasoning as a collapsed one-line preview, with the full text on click
+- PTC `run_code` descriptions and status as compact rows; code and output expand
+  on click, without listing every internal file or shell operation
 - Steer into the running turn
 - Images admitted into DSH's attachment store, delivered per the route's modality
 - A `/` menu with DSH's registered commands **and** user-invocable skills

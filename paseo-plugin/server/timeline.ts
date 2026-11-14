@@ -12,6 +12,7 @@ import type {
   ProviderToolCallDetail,
 } from "@getpaseo/plugin/server/provider";
 import type { JsonValue } from "./json-value";
+import { REASONING_KIND, RUN_CODE_KIND, reasoningItem, runCodeItem, type ActivityStatus } from "../shared/work-display";
 
 interface DshEvent {
   type: string;
@@ -193,6 +194,8 @@ export class TimelineBuilder {
         return this.#toolCall(data);
       case "tool/result":
         return this.#toolResult(data);
+      case "tool/ptc-dispatch":
+        return this.#ptcSpecialResult(data);
       case "turn/end":
         return this.#turnEnd(data);
       default:
@@ -203,6 +206,21 @@ export class TimelineBuilder {
   #put(item: ProviderTimelineItem): ProviderTimelineItem[] {
     this.#items.set(item.id, item);
     return [item];
+  }
+
+  reasoning(turn: number, step: number, text: string, status: ActivityStatus): ProviderTimelineItem[] {
+    return text.trim() === "" ? [] : this.#put(reasoningItem(turn, step, text, status));
+  }
+
+  /** End a display's spinner on cancellation or a disconnected runtime. */
+  finishPending(status: Exclude<ActivityStatus, "running">): ProviderTimelineItem[] {
+    const out: ProviderTimelineItem[] = [];
+    for (const item of this.#items.values()) {
+      if (item.type !== "plugin" || (item.kind !== RUN_CODE_KIND && item.kind !== REASONING_KIND)) continue;
+      if (!isRecord(item.data) || item.data.status !== "running") continue;
+      out.push(...this.#put({ ...item, data: { ...item.data, status } as JsonValue }));
+    }
+    return out;
   }
 
   #assistantMessage(data: Record<string, unknown>): ProviderTimelineItem[] {
@@ -219,13 +237,7 @@ export class TimelineBuilder {
       .filter((text) => text !== "")
       .join("\n");
     if (reasoning !== "") {
-      out.push(
-        ...this.#put({
-          type: "reasoning",
-          id: `reasoning:${turn}:${step}`,
-          text: reasoning,
-        }),
-      );
+      out.push(...this.reasoning(turn, step, reasoning, "completed"));
     }
 
     const text = textOf(content);
@@ -260,8 +272,27 @@ export class TimelineBuilder {
     this.#toolNames.set(callId, name);
     this.#toolInputs.set(callId, input);
     const previous = this.#items.get(`tool:${callId}`);
+    if (previous?.type === "plugin" && previous.kind === RUN_CODE_KIND) return [previous];
     const status = previous !== undefined && previous.type === "tool_call" ? previous.status : "running";
     return this.#emitToolCall(callId, name, input, status === "running" ? "running" : status);
+  }
+
+  /** Keep semantic cards, without flattening internal file/shell dispatches. */
+  #ptcSpecialResult(data: Record<string, unknown>): ProviderTimelineItem[] {
+    const callId = stringField(data, "subCallId");
+    if (callId === undefined) return [];
+    const name = stringField(data, "name");
+    const input = parseArguments(data.arguments);
+    if (name === "todo_write") {
+      const items = data.isError === true ? null : todoItems(input);
+      return items === null ? [] : this.#put({ type: "todo", id: `todo:${callId}`, items });
+    }
+    if (name !== "exit_plan_mode" && name !== "subagent" && name !== "ask_user_question") return [];
+    this.#toolNames.set(callId, name);
+    this.#toolInputs.set(callId, input);
+    return this.#toolResult({
+      message: { toolCallId: callId, content: data.content, isError: data.isError },
+    });
   }
 
   #toolResult(data: Record<string, unknown>): ProviderTimelineItem[] {
@@ -272,6 +303,17 @@ export class TimelineBuilder {
     const input = this.#toolInputs.get(callId) ?? {};
     const output = message === undefined ? "" : textOf(message.content);
     const failed = message?.isError === true;
+    if (name === "run_code") {
+      const previous = this.#items.get(`tool:${callId}`);
+      const canceled = previous?.type === "plugin" && previous.kind === RUN_CODE_KIND
+        && isRecord(previous.data) && previous.data.status === "canceled";
+      return this.#put(runCodeItem(callId, {
+        description: stringField(input, "description")?.trim() || "Run code",
+        code: stringField(input, "code") ?? "",
+        output,
+        status: canceled ? "canceled" : failed ? "failed" : "completed",
+      }));
+    }
 
     const out: ProviderTimelineItem[] = [];
     if (name === "todo_write" && !failed) {
@@ -297,12 +339,16 @@ export class TimelineBuilder {
 
   #turnEnd(data: Record<string, unknown>): ProviderTimelineItem[] {
     const reason = isRecord(data.reason) ? data.reason : undefined;
-    if (reason?.kind !== "error" && reason?.kind !== "failed") return [];
-    const error = isRecord(reason.error) ? reason.error : undefined;
+    const kind = typeof data.reason === "string" ? data.reason : reason?.kind;
+    const failed = kind === "error" || kind === "failed";
+    const canceled = kind === "aborted" || kind === "canceled" || kind === "cancelled";
+    const out = this.finishPending(failed ? "failed" : canceled ? "canceled" : "completed");
+    if (!failed) return out;
+    const error = isRecord(reason?.error) ? reason.error : undefined;
     const message =
       (error === undefined ? undefined : stringField(error, "message")) ?? "The turn failed.";
     const turn = typeof data.turn === "number" ? data.turn : 0;
-    return this.#put({ type: "error", id: `error:${turn}`, message });
+    return [...out, ...this.#put({ type: "error", id: `error:${turn}`, message })];
   }
 
   #emitToolCall(
@@ -311,6 +357,15 @@ export class TimelineBuilder {
     input: Record<string, unknown>,
     status: "running" | "completed" | "failed" | "canceled",
   ): ProviderTimelineItem[] {
+    if (name === "run_code") {
+      const previous = this.#items.get(`tool:${callId}`);
+      if (previous?.type === "plugin" && previous.kind === RUN_CODE_KIND) return [previous];
+      return this.#put(runCodeItem(callId, {
+        description: stringField(input, "description")?.trim() || "Run code",
+        code: stringField(input, "code") ?? "",
+        status,
+      }));
+    }
     const item: ProviderTimelineItem = {
       type: "tool_call",
       id: `tool:${callId}`,
