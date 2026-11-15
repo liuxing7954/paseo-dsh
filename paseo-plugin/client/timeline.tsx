@@ -15,7 +15,7 @@ import type {
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
 import { useSettings } from "@getpaseo/plugin/client";
-import { Icon } from "@getpaseo/plugin/client/react-native";
+import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as ReactNative from "react-native";
 import { Modal, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
@@ -264,6 +264,9 @@ function SheetPanel({
   icon,
   theme,
   onClose,
+  copyValue,
+  fullscreen = false,
+  onToggleFullscreen,
   scrollable = true,
   children,
 }: {
@@ -273,9 +276,19 @@ function SheetPanel({
   icon: string;
   theme: Theme;
   onClose: () => void;
+  copyValue?: string;
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
   scrollable?: boolean;
   children: ReactNode;
 }) {
+  const toast = useToast();
+  const copy = useCallback(() => {
+    if (copyValue === undefined) return;
+    void copyText(copyValue)
+      .then(() => toast.show("已复制"))
+      .catch(() => toast.error("复制失败"));
+  }, [copyValue, toast]);
   const window = useWindowDimensions();
   const style = useTimelineStyle();
   return (
@@ -284,6 +297,24 @@ function SheetPanel({
       <View style={styles.sheetHeader}>
         <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
         <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
+        {copyValue === undefined ? null : (
+          <Pressable onPress={copy} accessibilityLabel="复制" hitSlop={8}>
+            <Icon name="Copy" size={16} color={theme.colors.foregroundMuted} />
+          </Pressable>
+        )}
+        {onToggleFullscreen === undefined ? null : (
+          <Pressable
+            onPress={onToggleFullscreen}
+            accessibilityLabel={fullscreen ? "退出全屏" : "全屏"}
+            hitSlop={8}
+          >
+            <Icon
+              name={fullscreen ? "Minimize2" : "Maximize2"}
+              size={16}
+              color={theme.colors.foregroundMuted}
+            />
+          </Pressable>
+        )}
         <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
           <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
         </Pressable>
@@ -329,6 +360,7 @@ function DetailSheet({
   subjectWrap,
   icon,
   theme,
+  copyValue,
   scrollable,
   children,
 }: {
@@ -339,9 +371,14 @@ function DetailSheet({
   subjectWrap?: boolean;
   icon: string;
   theme: Theme;
+  copyValue?: string;
   scrollable?: boolean;
   children: ReactNode;
 }) {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    if (!open) setFull(false);
+  }, [open]);
   const background = sheetBackground(theme);
   return (
     <Modal visible={open} transparent animationType={Platform.OS === "web" ? "none" : "slide"} onRequestClose={onClose} statusBarTranslucent>
@@ -350,7 +387,7 @@ function DetailSheet({
         <View
           style={[
             styles.nativeSheet,
-            { borderColor: theme.colors.border },
+            { height: full ? "92%" : "50%", borderColor: theme.colors.border },
             Platform.OS === "web"
               ? ({ backgroundImage: `linear-gradient(${background}, ${background})` } as any)
               : { backgroundColor: background },
@@ -363,6 +400,9 @@ function DetailSheet({
             icon={icon}
             theme={theme}
             onClose={onClose}
+            copyValue={copyValue}
+            fullscreen={full}
+            onToggleFullscreen={() => setFull((value) => !value)}
             scrollable={scrollable}
           >
             {children}
@@ -418,6 +458,7 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
         title="思考"
         icon="Brain"
         theme={theme}
+        copyValue={revealed}
       >
         <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{revealed}</Text>
       </DetailSheet>
@@ -1033,6 +1074,7 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
         subjectWrap={wrapSubject}
         icon={look.icon}
         theme={theme}
+        copyValue={content}
         scrollable={false}
       >
         {content === undefined ? null : <CodeBox text={content} language={language} theme={theme} />}
