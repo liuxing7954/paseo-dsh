@@ -16,7 +16,7 @@ import type {
 } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Image, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { z } from "zod";
 
 type Phase = "streaming" | "complete";
@@ -177,13 +177,6 @@ function sheetBackground(theme: Theme): string {
   return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
 }
 
-const SHEET_LIGHT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC";
-const SHEET_DARK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOQkZEDAACuAFdBWoCvAAAAAElFTkSuQmCC";
-
-function sheetImage(theme: Theme): string {
-  return sheetBackground(theme) === "#FFFFFF" ? SHEET_LIGHT : SHEET_DARK;
-}
-
 function SheetPanel({
   title,
   icon,
@@ -199,7 +192,14 @@ function SheetPanel({
 }) {
   return (
     <View style={[styles.sheet, { borderColor: theme.colors.border }]}>
-      <Image source={{ uri: sheetImage(theme) }} style={styles.sheetFill} resizeMode="stretch" />
+      <View
+        style={[
+          styles.sheetFill,
+          Platform.OS === "web"
+            ? ({ backgroundImage: `linear-gradient(${sheetBackground(theme)}, ${sheetBackground(theme)})` } as any)
+            : { backgroundColor: sheetBackground(theme) },
+        ]}
+      />
       <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
       <View style={styles.sheetHeader}>
         <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
