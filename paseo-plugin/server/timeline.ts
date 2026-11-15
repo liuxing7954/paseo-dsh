@@ -69,6 +69,7 @@ function toolDetail(name: string, input: Record<string, unknown>, output?: strin
       };
     }
     case "read":
+    case "read_image":
       return {
         type: "read",
         filePath: filePath ?? "",
@@ -103,6 +104,7 @@ function toolDetail(name: string, input: Record<string, unknown>, output?: strin
         ...(output === undefined ? {} : { content: output }),
       };
     case "web_fetch":
+    case "webfetch":
       return {
         type: "fetch",
         url: stringField(input, "url") ?? "",

@@ -25,6 +25,7 @@
   "files": [
     "paseo-plugin.json",
     "index.server.ts",
+    "shared/",
     "server/",
     "lib/",
     "bin/",

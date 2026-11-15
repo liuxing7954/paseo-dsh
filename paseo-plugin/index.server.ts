@@ -1,4 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
+import { timelineStyleSettings } from "./shared/settings";
 import { ensurePaseoProfile } from "./server/bootstrap";
 import { createDshProvider } from "./server/provider";
 
@@ -24,6 +25,7 @@ export default function contribute(server: PluginServerContext) {
     );
   }
 
+  server.registerSettings(timelineStyleSettings);
   server.registerProvider(createDshProvider());
   return () => {};
 }
