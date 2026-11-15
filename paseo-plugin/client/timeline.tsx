@@ -214,10 +214,77 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
 
 type ToolKind = "shell" | "read" | "write" | "edit" | "search" | "fetch" | "mcp" | "code" | "other";
 
+interface ProgramMark {
+  label: string;
+  color: string;
+  textColor?: string;
+}
+
 interface ToolLook {
   icon: string;
   verb: string;
   target: string;
+  mark?: ProgramMark;
+}
+
+/** A small program mark for the common shell programs Better Paseo brands. */
+const PROGRAM_MARKS: Readonly<Record<string, ProgramMark>> = {
+  git: { label: "git", color: "#F05032" },
+  gh: { label: "gh", color: "#24292F" },
+  npm: { label: "npm", color: "#CB3837" },
+  npx: { label: "npm", color: "#CB3837" },
+  pnpm: { label: "pn", color: "#F69220" },
+  pnpx: { label: "pn", color: "#F69220" },
+  yarn: { label: "y", color: "#2C8EBB" },
+  node: { label: "JS", color: "#5FA04E" },
+  deno: { label: "D", color: "#111111" },
+  bun: { label: "bun", color: "#FBF0DF", textColor: "#111111" },
+  python: { label: "Py", color: "#3776AB" },
+  python3: { label: "Py", color: "#3776AB" },
+  pip: { label: "pip", color: "#3776AB" },
+  pip3: { label: "pip", color: "#3776AB" },
+  uv: { label: "uv", color: "#DE5FE9" },
+  pytest: { label: "py", color: "#0A9EDC" },
+  tsc: { label: "TS", color: "#3178C6" },
+  tsx: { label: "TS", color: "#3178C6" },
+  cargo: { label: "rs", color: "#DEA584" },
+  rustc: { label: "rs", color: "#DEA584" },
+  go: { label: "Go", color: "#00ADD8" },
+  docker: { label: "D", color: "#2496ED" },
+  "docker-compose": { label: "D", color: "#2496ED" },
+  kubectl: { label: "k8s", color: "#326CE5" },
+  helm: { label: "h", color: "#0F1689" },
+  terraform: { label: "tf", color: "#7B42BC" },
+  aws: { label: "aws", color: "#FF9900" },
+  gcloud: { label: "G", color: "#4285F4" },
+  az: { label: "az", color: "#0078D4" },
+  swift: { label: "sw", color: "#F05138" },
+  ruby: { label: "rb", color: "#CC342D" },
+  php: { label: "php", color: "#777BB4" },
+  java: { label: "J", color: "#ED8B00" },
+  gradle: { label: "G", color: "#02303A" },
+  mvn: { label: "mvn", color: "#C71A36" },
+  dotnet: { label: ".N", color: "#512BD4" },
+  flutter: { label: "F", color: "#02569B" },
+  code: { label: "c", color: "#007ACC" },
+  cursor: { label: "cur", color: "#111111" },
+  claude: { label: "cl", color: "#D97757" },
+  codex: { label: "cx", color: "#111111" },
+  gemini: { label: "G", color: "#4285F4" },
+  rg: { label: "rg", color: "#00A98F" },
+  grep: { label: "g", color: "#6B7280" },
+  find: { label: "f", color: "#6B7280" },
+  curl: { label: "c", color: "#073551" },
+  wget: { label: "w", color: "#0B5C9E" },
+  make: { label: "m", color: "#6D00CC" },
+  brew: { label: "b", color: "#FBB040", textColor: "#111111" },
+};
+
+function shellProgram(command: string | undefined): string | undefined {
+  const first = command?.trim().split(/\s+/)[0];
+  if (first === undefined || first === "") return undefined;
+  const base = first.split(/[/\\]/).pop() ?? first;
+  return base.replace(/\.(?:exe|cmd|ps1)$/i, "").replace(/[0-9.]+$/, "");
 }
 
 function mcpName(name: string): { server: string; tool: string } | undefined {
@@ -253,8 +320,17 @@ function toolLook(data: ToolData): ToolLook {
   const input = isRecord(detail?.input) ? detail.input : undefined;
   const kind = toolKindOf(data.name, detail);
   switch (kind) {
-    case "shell":
-      return { icon: "SquareTerminal", verb: "命令", target: firstLine(stringField(detail, "command")) ?? data.name };
+    case "shell": {
+      const command = stringField(detail, "command");
+      const program = shellProgram(command);
+      const mark = program === undefined ? undefined : PROGRAM_MARKS[program];
+      return {
+        icon: "SquareTerminal",
+        verb: "命令",
+        target: firstLine(command) ?? data.name,
+        ...(mark === undefined ? {} : { mark }),
+      };
+    }
     case "read":
       return { icon: "FileText", verb: "读取", target: stringField(detail, "filePath") ?? data.name };
     case "write":
@@ -303,6 +379,15 @@ function statusColor(status: string, theme: Theme): string {
   return theme.colors.foregroundMuted;
 }
 
+function readContent(content: string): string {
+  const match = /<content>\n?([\s\S]*?)\n?<\/content>/.exec(content);
+  const body = match?.[1] ?? content;
+  return body
+    .replace(/^\s*\d+:\s?/gm, "")
+    .replace(/\(End of file[^)]*\)\s*$/m, "")
+    .trim();
+}
+
 function detailBody(data: ToolData): string | undefined {
   const detail = data.detail;
   if (detail === undefined) return undefined;
@@ -318,10 +403,8 @@ function detailBody(data: ToolData): string | undefined {
       break;
     }
     case "read": {
-      const path = stringField(detail, "filePath");
-      if (path !== undefined) parts.push(path);
       const content = stringField(detail, "content");
-      if (content !== undefined) parts.push(content);
+      if (content !== undefined) parts.push(readContent(content));
       break;
     }
     case "write":
@@ -370,7 +453,13 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
         onPress={toggle}
         style={styles.row}
       >
-        <Icon name={look.icon} size={14} color={failed ? theme.colors.statusDanger : theme.colors.foregroundMuted} />
+        {look.mark === undefined ? (
+          <Icon name={look.icon} size={14} color={failed ? theme.colors.statusDanger : theme.colors.foregroundMuted} />
+        ) : (
+          <View style={[styles.mark, { backgroundColor: look.mark.color }]}>
+            <Text style={[styles.markText, { color: look.mark.textColor ?? "#FFFFFF" }]}>{look.mark.label}</Text>
+          </View>
+        )}
         <Text style={[styles.verb, { color: failed ? theme.colors.statusDanger : theme.colors.foregroundMuted }]}>
           {look.verb}
         </Text>
@@ -474,6 +563,8 @@ const styles = {
     minHeight: 26,
   },
   dot: { width: 7, height: 7, borderRadius: 4 },
+  mark: { width: 15, height: 15, borderRadius: 3, alignItems: "center", justifyContent: "center" },
+  markText: { fontSize: 7, fontWeight: "700", lineHeight: 9 },
   verb: { fontSize: 12, fontWeight: "600" },
   target: { flex: 1, minWidth: 0, fontSize: 12 },
   meta: { fontSize: 11 },
