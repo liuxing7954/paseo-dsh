@@ -397,7 +397,11 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
         accessibilityRole="button"
         accessibilityLabel={streaming ? "思考中" : "已思考"}
         onPress={() => setOpen(true)}
-        style={row}
+        hitSlop={6}
+        style={({ pressed }: { pressed: boolean }) => [
+          row,
+          pressed ? { backgroundColor: theme.colors.surface1, borderRadius: 6 } : null,
+        ]}
       >
         <View style={styles.lead}>
           <Icon name="Brain" size={14} color={streaming ? theme.colors.accent : theme.colors.foregroundMuted} />
@@ -989,7 +993,11 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
         accessibilityRole="button"
         accessibilityLabel={`${look.verb}${look.target === "" ? "" : ` ${look.target}`}`}
         onPress={openSheet}
-        style={row}
+        hitSlop={6}
+        style={({ pressed }: { pressed: boolean }) => [
+          row,
+          pressed ? { backgroundColor: theme.colors.surface1, borderRadius: 6 } : null,
+        ]}
       >
         <View style={styles.lead}>
           {data.status === "running" ? (
