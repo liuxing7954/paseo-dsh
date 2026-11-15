@@ -14,9 +14,9 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
+import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Image, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { z } from "zod";
 
 type Phase = "streaming" | "complete";
@@ -184,6 +184,37 @@ function sheetImage(theme: Theme): string {
   return sheetBackground(theme) === "#FFFFFF" ? SHEET_LIGHT : SHEET_DARK;
 }
 
+function SheetPanel({
+  title,
+  icon,
+  theme,
+  onClose,
+  children,
+}: {
+  title: string;
+  icon: string;
+  theme: Theme;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <View style={[styles.sheet, { borderColor: theme.colors.border }]}>
+      <Image source={{ uri: sheetImage(theme) }} style={styles.sheetFill} resizeMode="stretch" />
+      <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
+      <View style={styles.sheetHeader}>
+        <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
+        <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
+        <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
+          <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
+        </Pressable>
+      </View>
+      <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator>
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
 function DetailSheet({
   open,
   onClose,
@@ -199,27 +230,21 @@ function DetailSheet({
   theme: Theme;
   children: ReactNode;
 }) {
+  if (Platform.OS === "web") {
+    if (!open) return null;
+    return (
+      <View style={styles.webOverlay}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
+        <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>
+      </View>
+    );
+  }
   return (
-    <Modal title="" open={open} onOpenChange={(next: boolean) => { if (!next) onClose(); }}>
-      <Modal.Content scrollable={false} style={styles.hostContent} contentContainerStyle={styles.hostContentInner}>
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
-          <View style={[styles.sheet, { borderColor: theme.colors.border }]}>
-            <Image source={{ uri: sheetImage(theme) }} style={styles.sheetFill} resizeMode="stretch" />
-            <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
-            <View style={styles.sheetHeader}>
-              <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
-              <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
-              <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
-                <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
-              </Pressable>
-            </View>
-            <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator>
-              {children}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal.Content>
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
+        <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>
+      </View>
     </Modal>
   );
 }
@@ -626,8 +651,15 @@ const styles = {
   meta: { fontSize: 11 },
   mono: { fontFamily: MONO },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  hostContent: { flex: 1 },
-  hostContentInner: { flexGrow: 1, padding: 0 },
+  webOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100000,
+    justifyContent: "flex-end",
+  },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
   sheet: {
