@@ -16,6 +16,7 @@ import type {
 } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { z } from "zod";
 
@@ -177,6 +178,30 @@ function sheetBackground(theme: Theme): string {
   return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
 }
 
+function usePortalHost(open: boolean): any {
+  const [host, setHost] = useState<any>(null);
+  useEffect(() => {
+    if (Platform.OS !== "web" || !open) {
+      setHost(null);
+      return;
+    }
+    const doc = (globalThis as any).document;
+    if (doc === undefined) return;
+    const element = doc.createElement("div");
+    element.style.position = "fixed";
+    element.style.inset = "0";
+    element.style.zIndex = "2147483647";
+    element.style.pointerEvents = "none";
+    doc.body.appendChild(element);
+    setHost(element);
+    return () => {
+      element.remove();
+      setHost(null);
+    };
+  }, [open]);
+  return host;
+}
+
 function SheetPanel({
   title,
   icon,
@@ -230,14 +255,16 @@ function DetailSheet({
   theme: Theme;
   children: ReactNode;
 }) {
+  const host = usePortalHost(open);
   if (Platform.OS === "web") {
-    if (!open) return null;
-    return (
-      <View style={styles.webOverlay}>
+    if (!open || host === null) return null;
+    return createPortal(
+      <View style={styles.portalOverlay}>
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
         <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>
-      </View>
-    );
+      </View>,
+      host,
+    ) as any;
   }
   return (
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
@@ -651,14 +678,10 @@ const styles = {
   meta: { fontSize: 11 },
   mono: { fontFamily: MONO },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  webOverlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 100000,
+  portalOverlay: {
+    flex: 1,
     justifyContent: "flex-end",
+    pointerEvents: "box-none",
   },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
