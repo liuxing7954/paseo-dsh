@@ -178,8 +178,12 @@ function sheetBackground(theme: Theme): string {
   return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
 }
 
-function usePortalHost(open: boolean): any {
+function usePortalHost(open: boolean, onClose: () => void, theme: Theme): any {
   const [host, setHost] = useState<any>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const background = sheetBackground(theme);
+
   useEffect(() => {
     if (Platform.OS !== "web" || !open) {
       setHost(null);
@@ -187,18 +191,49 @@ function usePortalHost(open: boolean): any {
     }
     const doc = (globalThis as any).document;
     if (doc === undefined) return;
-    const element = doc.createElement("div");
-    element.style.position = "fixed";
-    element.style.inset = "0";
-    element.style.zIndex = "2147483647";
-    element.style.pointerEvents = "none";
-    doc.body.appendChild(element);
-    setHost(element);
+    const root = doc.createElement("div");
+    Object.assign(root.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483647",
+      display: "flex",
+      alignItems: "flex-end",
+      justifyContent: "center",
+      pointerEvents: "auto",
+    });
+    const backdrop = doc.createElement("div");
+    Object.assign(backdrop.style, {
+      position: "absolute",
+      inset: "0",
+      background: "rgba(0,0,0,0.45)",
+    });
+    const dismiss = () => closeRef.current();
+    backdrop.addEventListener("click", dismiss);
+    const sheet = doc.createElement("div");
+    Object.assign(sheet.style, {
+      position: "relative",
+      width: "100%",
+      maxWidth: "720px",
+      height: "50%",
+      background,
+      borderTopLeftRadius: "16px",
+      borderTopRightRadius: "16px",
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      boxShadow: "0 -12px 40px rgba(0,0,0,0.2)",
+    });
+    root.appendChild(backdrop);
+    root.appendChild(sheet);
+    doc.body.appendChild(root);
+    setHost(sheet);
     return () => {
-      element.remove();
+      backdrop.removeEventListener("click", dismiss);
+      root.remove();
       setHost(null);
     };
-  }, [open]);
+  }, [open, background]);
+
   return host;
 }
 
@@ -216,15 +251,7 @@ function SheetPanel({
   children: ReactNode;
 }) {
   return (
-    <View style={[styles.sheet, { borderColor: theme.colors.border }]}>
-      <View
-        style={[
-          styles.sheetFill,
-          Platform.OS === "web"
-            ? ({ backgroundImage: `linear-gradient(${sheetBackground(theme)}, ${sheetBackground(theme)})` } as any)
-            : { backgroundColor: sheetBackground(theme) },
-        ]}
-      />
+    <View style={styles.sheetPanel}>
       <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
       <View style={styles.sheetHeader}>
         <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
@@ -255,14 +282,11 @@ function DetailSheet({
   theme: Theme;
   children: ReactNode;
 }) {
-  const host = usePortalHost(open);
+  const host = usePortalHost(open, onClose, theme);
   if (Platform.OS === "web") {
     if (!open || host === null) return null;
     return createPortal(
-      <View style={styles.portalOverlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
-        <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>
-      </View>,
+      <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>,
       host,
     ) as any;
   }
@@ -270,7 +294,9 @@ function DetailSheet({
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modalRoot}>
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
-        <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>
+        <View style={[styles.nativeSheet, { backgroundColor: sheetBackground(theme) }]}>
+          <SheetPanel title={title} icon={icon} theme={theme} onClose={onClose}>{children}</SheetPanel>
+        </View>
       </View>
     </Modal>
   );
@@ -678,26 +704,18 @@ const styles = {
   meta: { fontSize: 11 },
   mono: { fontFamily: MONO },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  portalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    pointerEvents: "box-none",
-  },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet: {
+  nativeSheet: {
     width: "100%",
     maxWidth: 720,
     height: "50%",
     alignSelf: "center",
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    paddingBottom: 8,
     overflow: "hidden",
   },
-  sheetFill: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+  sheetPanel: { flex: 1 },
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginTop: 8, marginBottom: 4 },
   sheetHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   sheetTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: "600" },
