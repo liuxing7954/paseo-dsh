@@ -14,9 +14,9 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
+import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { z } from "zod";
 
 type Phase = "streaming" | "complete";
@@ -152,6 +152,31 @@ function usePacedText(text: string, streaming: boolean): string {
 
 const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
 
+/** The host's surface tokens may be translucent over a wallpaper; a sheet needs a solid one. */
+function sheetBackground(theme: Theme): string {
+  const value = theme.colors.foreground.trim();
+  let r = 255;
+  let g = 255;
+  let b = 255;
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hex !== null) {
+    const n = Number.parseInt(hex[1] ?? "", 16);
+    r = (n >> 16) & 255;
+    g = (n >> 8) & 255;
+    b = n & 255;
+  } else {
+    const rgb = /rgba?\(([^)]+)\)/i.exec(value);
+    if (rgb !== null) {
+      const parts = (rgb[1] ?? "").split(",").map((part) => Number.parseFloat(part.trim()));
+      if (parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)) {
+        [r, g, b] = [parts[0] ?? 255, parts[1] ?? 255, parts[2] ?? 255];
+      }
+    }
+  }
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
+}
+
 function DetailSheet({
   open,
   onClose,
@@ -168,17 +193,19 @@ function DetailSheet({
   children: ReactNode;
 }) {
   return (
-    <Modal
-      title={title}
-      icon={<Icon name={icon} size={16} color={theme.colors.foregroundMuted} />}
-      open={open}
-      onOpenChange={(next: boolean) => {
-        if (!next) onClose();
-      }}
-    >
-      <Modal.Content scrollable>
-        <View style={styles.sheetBody}>{children}</View>
-      </Modal.Content>
+    <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={[styles.sheetScreen, { backgroundColor: sheetBackground(theme) }]}>
+        <View style={[styles.sheetHeader, { borderColor: theme.colors.border }]}>
+          <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
+          <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
+          <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
+            <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
+          </Pressable>
+        </View>
+        <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator>
+          {children}
+        </ScrollView>
+      </View>
     </Modal>
   );
 }
@@ -585,5 +612,16 @@ const styles = {
   meta: { fontSize: 11 },
   mono: { fontFamily: MONO },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  sheetBody: { paddingBottom: 16 },
+  sheetScreen: { flex: 1 },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  sheetTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: "600" },
+  sheetScroll: { flex: 1 },
+  sheetContent: { padding: 16, paddingBottom: 40 },
 } as const;
