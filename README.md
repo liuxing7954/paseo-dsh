@@ -397,5 +397,5 @@ MIT，见 [LICENSE](LICENSE)。
 
 时间线里的工具类型图标、思考行的一行预览和逐字展开交互，参考了
 [Better Paseo](https://github.com/RoundRedDot/better-paseo)（MIT，Copyright (c) 2026
-ABorakati）。工具类型图标用 Paseo 宿主的 Lucide 图标集，shell 程序用黑白灰文字徽标，不是品牌彩色 SVG；Better Paseo 的完整 MIT 许可见
+ABorakati）。工具类型图标用 Paseo 宿主的 Lucide 图标集，shell 程序用黑白灰文字徽标，不是品牌彩色 SVG；这是一个参考交互和分类映射的精简实现，不是整个插件的 1:1 移植；Better Paseo 的完整 MIT 许可见
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
