@@ -38,6 +38,11 @@ selection. A rejected change leaves the previous selection intact. Resume and
 rewind preserve the recorded selection; switching to another model does not
 inherit an incompatible profile effort.
 
+This also fixes main on its own. Main writes later changes to the bridge's own
+selection reference, which DSH 0.2.2-rc.1's `installModelSelection()` does not
+read, so a model or thinking change made after a session opens is reported to
+Paseo but never reaches the agent.
+
 Opening keeps upstream's tolerance for a thinking option the model does not
 offer, such as a saved choice after a profile edit or a host default shared
 across models. The option never reaches `initialize`; it is logged, and the
