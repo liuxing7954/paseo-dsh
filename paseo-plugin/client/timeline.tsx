@@ -152,6 +152,31 @@ function usePacedText(text: string, streaming: boolean): string {
 
 const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
 
+/** The host's surface tokens may be translucent over a wallpaper; a sheet needs a solid one. */
+function sheetBackground(theme: Theme): string {
+  const value = theme.colors.foreground.trim();
+  let r = 255;
+  let g = 255;
+  let b = 255;
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hex !== null) {
+    const n = Number.parseInt(hex[1] ?? "", 16);
+    r = (n >> 16) & 255;
+    g = (n >> 8) & 255;
+    b = n & 255;
+  } else {
+    const rgb = /rgba?\(([^)]+)\)/i.exec(value);
+    if (rgb !== null) {
+      const parts = (rgb[1] ?? "").split(",").map((part) => Number.parseFloat(part.trim()));
+      if (parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)) {
+        [r, g, b] = [parts[0] ?? 255, parts[1] ?? 255, parts[2] ?? 255];
+      }
+    }
+  }
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
+}
+
 function DetailSheet({
   open,
   onClose,
@@ -183,7 +208,7 @@ function DetailSheet({
             styles.sheet,
             {
               maxHeight: Math.max(240, Math.round(height * 0.78)),
-              backgroundColor: theme.colors.surface0,
+              backgroundColor: sheetBackground(theme),
               borderColor: theme.colors.border,
             },
           ]}
