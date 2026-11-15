@@ -32,6 +32,7 @@
     "README.md",
     "OVERVIEW.md",
     "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
     "index.client.tsx",
     "client/"
   ],
