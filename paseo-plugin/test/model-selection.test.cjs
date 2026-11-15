@@ -216,12 +216,9 @@ test('model and effort changes are atomic and rejected choices do not replace UI
   await f.configure('live','read-after-failure',{});
   assert.equal(f.current('live').model,accepted.model);
   assert.equal(f.current('live').thinkingOption,accepted.thinkingOption);
-  await f.configure('live','unsupported',{thinkingOption:'unadvertised'});
-  assert(f.events.some(e=>e.type==='request.failed'&&e.requestId==='unsupported'));
-  assert(!f.events.some(e=>e.type==='request.completed'&&e.requestId==='unsupported'));
 });
 
-test('an unoffered saved or host-default thinking option opens on the model default; live changes still reject it', async t => {
+test('a thinking option the model does not offer is dropped with a log at open and on live changes', async t => {
   const f = await providerFixture(t);
   const logs = [], write = process.stderr.write;
   t.mock.method(process.stderr, 'write', function (chunk, ...rest) {
@@ -248,10 +245,15 @@ test('an unoffered saved or host-default thinking option opens on the model defa
   assert.equal(f.current('durable').thinkingOption,undefined);
   assert.equal(logs.length,3);
   assert(logs.every(line=>line.includes('ignoring unsupported thinking option "xhigh" for fixture/reasoning')));
-  // Live choices stay strict and leave the applied selection in place.
+  // A live choice the model does not offer follows the same rule, as on main.
+  await f.configure('saved','live-high',{thinkingOption:'high'});
+  assert.equal(f.current('saved').thinkingOption,'high');
   await f.configure('saved','live-unsupported',{thinkingOption:'xhigh'});
-  assert(f.events.some(e=>e.type==='request.failed'&&e.requestId==='live-unsupported'));
+  assert(f.events.some(e=>e.type==='request.completed'&&e.requestId==='live-unsupported'));
+  assert(!f.events.some(e=>e.type==='request.failed'&&e.requestId==='live-unsupported'));
+  assert.equal(lastEffort(),null);
   assert.equal(f.current('saved').thinkingOption,undefined);
+  assert.equal(logs.length,4);
 });
 
 test('clearing effort and switching to a non-reasoning model clear the actual advertised choice', async t => {

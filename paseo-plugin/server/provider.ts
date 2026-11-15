@@ -350,8 +350,8 @@ class DshConnection implements ProviderConnection {
     const display = this.#display ?? (await loadCatalog(config.cwd));
     this.#display = display;
     const route = { ...parseRoute(config.model, display.fallbackRoute) };
-    // Only an option the model offers reaches initialize. The opening
-    // configure() below reports any other and opens on the model's default.
+    // Only an option the model offers reaches initialize; configure() below
+    // drops any other with a log, as it does for live changes.
     if (config.thinkingOption === null || config.thinkingOption === "") {
       route.reasoningEffort = null;
     } else if (config.thinkingOption !== undefined && offersThinking(display.models, route, config.thinkingOption)) {
@@ -399,7 +399,7 @@ class DshConnection implements ProviderConnection {
         await session.configure({
           ...(config.model === undefined ? {} : { model: config.model }),
           ...(config.thinkingOption === undefined ? {} : { thinkingOption: config.thinkingOption }),
-        }, true);
+        });
       }
     }
     catch (error) {

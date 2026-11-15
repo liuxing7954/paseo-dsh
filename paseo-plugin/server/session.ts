@@ -745,15 +745,8 @@ export class DshSession {
     });
   }
 
-  /**
-   * Apply a composer change: model, mode, thinking option or settings.
-   *
-   * A live change rejects a thinking option the model does not offer. With
-   * `opening`, the change is a saved or host-default choice instead; after a
-   * profile edit, or with a default shared across models, the model may not
-   * offer it, and the session then opens on the model's default.
-   */
-  async configure(changes: ProviderConfigChanges, opening = false): Promise<void> {
+  /** Apply a composer change: model, mode, thinking option or settings. */
+  async configure(changes: ProviderConfigChanges): Promise<void> {
     const process = this.#require();
     if ((changes.model !== undefined && changes.model !== null) || changes.thinkingOption !== undefined) {
       const next = changes.model == null ? this.#route : parseRoute(changes.model, this.#route);
@@ -761,10 +754,11 @@ export class DshSession {
       let effort = changes.thinkingOption === undefined
         ? switched ? undefined : this.#thinkingOption
         : changes.thinkingOption === null || changes.thinkingOption === "" ? undefined : changes.thinkingOption;
+      // The runtime rejects a whole turn when handed an effort the model does not
+      // declare, and a saved or host-default choice can name one. Serve only what
+      // this model advertises and drop anything else; the read-back reports it.
       if (effort !== undefined && !offersThinking(this.#options.models, next, effort)) {
-        const problem = `unsupported thinking option "${effort}" for ${next.provider}/${next.model}`;
-        if (!opening) throw new Error(problem);
-        this.#options.log(`ignoring ${problem}; opening with the model default`);
+        this.#options.log(`ignoring unsupported thinking option "${effort}" for ${next.provider}/${next.model}`);
         effort = undefined;
       }
       // Commit model and effort together, then publish only the native result.

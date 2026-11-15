@@ -43,18 +43,17 @@ selection reference, which DSH 0.2.2-rc.1's `installModelSelection()` does not
 read, so a model or thinking change made after a session opens is reported to
 Paseo but never reaches the agent.
 
-Opening keeps upstream's tolerance for a thinking option the model does not
-offer, such as a saved choice after a profile edit or a host default shared
-across models. The option never reaches `initialize`; it is logged, and the
-session opens on the model's default, replacing a stale durable selection too.
-Only live changes reject it.
+As on main, a thinking option the model does not offer is dropped with a log:
+a saved choice after a profile edit, a host default shared across models, or a
+live change. It never reaches `initialize`, a stale durable selection is
+replaced too, and the read-back reports the effort actually applied.
 
 ## Validation
 
 From `paseo-plugin`, run `npm run typecheck` and `npm test`. The suite covers
 transports, literal prompts, exact grants, concurrent independent opens,
-failed-open cleanup, initial/live/restored model selection, and opening with a
-thinking option the model does not offer. Native-model contract tests use a
+failed-open cleanup, initial/live/restored model selection, and thinking
+options the model does not offer. Native-model contract tests use a
 locally installed DSH and explicitly skip when it is absent; the remaining tests
 use deterministic stdio fixtures. The suite needs no model credentials and passes
 on Windows, macOS, and Linux.
