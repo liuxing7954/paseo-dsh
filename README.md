@@ -392,3 +392,10 @@ patch 是本插件自己的发布计数；完整提交记录见
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
+
+## 致谢
+
+时间线里的工具类型图标、思考行的一行预览和逐字展开交互，参考了
+[Better Paseo](https://github.com/RoundRedDot/better-paseo)（MIT，Copyright (c) 2026
+ABorakati）。图标来自 Paseo 宿主的 Lucide 图标集；Better Paseo 的完整 MIT 许可见
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
