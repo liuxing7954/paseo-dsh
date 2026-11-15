@@ -150,19 +150,6 @@ function usePacedText(text: string, streaming: boolean): string {
   return text.slice(0, Math.min(count, text.length));
 }
 
-function useBlink(active: boolean): number {
-  const [on, setOn] = useState(true);
-  useEffect(() => {
-    if (!active) {
-      setOn(true);
-      return;
-    }
-    const timer = setInterval(() => setOn((value) => !value), 700);
-    return () => clearInterval(timer);
-  }, [active]);
-  return active && !on ? 0.35 : 1;
-}
-
 const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
 
 function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
@@ -171,7 +158,6 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
   const text = item.data.text;
   const preview = streaming ? lastSentence(text) || "思考中…" : firstSentence(text) || "已思考";
   const revealed = usePacedText(text, streaming);
-  const opacity = useBlink(streaming);
   const body = useRef<{ scrollToEnd?: (options?: { animated?: boolean }) => void } | null>(null);
 
   useEffect(() => {
@@ -188,10 +174,10 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
         onPress={toggle}
         style={styles.row}
       >
-        <View style={[styles.dot, { backgroundColor: streaming ? theme.colors.accent : theme.colors.foregroundMuted, opacity }]} />
-        <Text style={[styles.verb, { color: theme.colors.foregroundMuted }]}>
-          {streaming ? "思考" : "已思考"}
-        </Text>
+        <View style={styles.lead}>
+          <Icon name="Brain" size={14} color={streaming ? theme.colors.accent : theme.colors.foregroundMuted} />
+        </View>
+        <Text style={[styles.verb, { color: theme.colors.foregroundMuted }]}>思考</Text>
         <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
           {preview}
         </Text>
@@ -447,22 +433,26 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
         onPress={toggle}
         style={styles.row}
       >
-        {look.mark === undefined ? (
-          <Icon name={look.icon} size={14} color={failed ? theme.colors.statusDanger : theme.colors.foregroundMuted} />
-        ) : (
-          <View style={[styles.mark, { borderColor: theme.colors.border }]}>
-            <Text style={[styles.markText, { color: theme.colors.foregroundMuted }]}>{look.mark}</Text>
-          </View>
-        )}
+        <View style={styles.lead}>
+          {look.mark === undefined ? (
+            <Icon name={look.icon} size={14} color={failed ? theme.colors.statusDanger : theme.colors.foregroundMuted} />
+          ) : (
+            <View style={[styles.mark, { borderColor: theme.colors.border }]}>
+              <Text style={[styles.markText, { color: theme.colors.foregroundMuted }]}>{look.mark}</Text>
+            </View>
+          )}
+        </View>
         <Text style={[styles.verb, { color: failed ? theme.colors.statusDanger : theme.colors.foregroundMuted }]}>
           {look.verb}
         </Text>
         <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
           {look.target}
         </Text>
-        <Text style={[styles.meta, { color: statusColor(data.status, theme) }]}>
-          {statusLabel(data.status)}
-        </Text>
+        {data.status === "completed" ? null : (
+          <Text style={[styles.meta, { color: statusColor(data.status, theme) }]}>
+            {statusLabel(data.status)}
+          </Text>
+        )}
         {body === undefined ? null : (
           <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={12} color={theme.colors.foregroundMuted} />
         )}
@@ -552,11 +542,11 @@ const styles = {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 4,
+    paddingVertical: 2,
     paddingHorizontal: 2,
-    minHeight: 26,
+    minHeight: 24,
   },
-  dot: { width: 7, height: 7, borderRadius: 4 },
+  lead: { width: 17, height: 17, alignItems: "center", justifyContent: "center" },
   mark: { width: 17, height: 17, borderRadius: 4, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   markText: { fontSize: 8, fontWeight: "700", lineHeight: 10 },
   verb: { fontSize: 12, fontWeight: "600" },
@@ -566,8 +556,8 @@ const styles = {
     maxHeight: 320,
     borderWidth: 1,
     borderRadius: 8,
-    marginTop: 2,
-    marginBottom: 6,
+    marginTop: 1,
+    marginBottom: 3,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
