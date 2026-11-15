@@ -176,6 +176,38 @@ test('simultaneous child questions are promoted without collisions; cancellation
   assert.deepEqual(f.invalid, []);
 });
 
+test('a denial that asks to interrupt cancels only the turn that asked', { timeout: 10000 }, async t => {
+  const f = await fixture(t); await f.prompt('children'); await f.until(e => e.sessionId === 'b' && e.type === 'session.opened');
+  const cancels = () => f.frames().filter(r => r.method === 'session/cancel').map(r => r.params.sessionId);
+  const waitFor = async check => {
+    const deadline = performance.now() + 3000;
+    while (!check()) { if (performance.now() > deadline) throw new Error('condition not met'); await new Promise(r => setTimeout(r, 10)); }
+  };
+  await f.prompt('questions');
+  const a = await f.until(e => e.type === 'session.permission' && e.request.id === 'a:same-call');
+  const b = await f.until(e => e.type === 'session.permission' && e.request.id === 'b:same-call');
+  // A plain denial only answers the card.
+  await f.send({ type: 'session.permission', sessionId: 'paseo-root', permissionId: b.request.id, response: { behavior: 'deny' } });
+  // Deny-and-stop on a card promoted from a child cancels that child alone.
+  await f.send({ type: 'session.permission', sessionId: 'paseo-root', permissionId: a.request.id,
+    response: { behavior: 'deny', interrupt: true } });
+  await waitFor(() => cancels().length > 0);
+  assert.deepEqual(cancels(), ['a']);
+  // On a root card it cancels the root turn.
+  await f.prompt('approval');
+  const approval = await f.until(e => e.type === 'session.permission' && e.request.kind === 'tool');
+  await f.send({ type: 'session.permission', sessionId: 'paseo-root', permissionId: approval.request.id,
+    response: { behavior: 'deny', interrupt: true } });
+  await waitFor(() => cancels().length > 1);
+  assert.deepEqual(cancels(), ['a', 'native-root']);
+  await f.until(e => e.type === 'session.turn' && e.sessionId === 'paseo-root' && e.state !== 'started');
+  assert.deepEqual(f.frames().find(r => r.id === 'approval' && r.result)?.result, { behavior: 'deny' });
+  for (const card of [a, b, approval]) {
+    assert(f.events.some(e => e.type === 'session.permission_resolved' && e.permissionId === card.request.id));
+  }
+  assert.deepEqual(f.invalid, []);
+});
+
 test('root steering acknowledges the active turn without canceling or duplicating subagent messages, and preserves distinct messages with identical text', { timeout: 10000 }, async t => {
   const f = await fixture(t);
   const sendPrompt = async (clientMessageId, text, delivery = 'auto', sessionId = 'paseo-root') => {

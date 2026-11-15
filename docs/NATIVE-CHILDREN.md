@@ -26,7 +26,9 @@ explicitly for child targets.
 
 Questions and approvals carry their native session and transport request IDs.
 Promoted child cards use owner-qualified IDs so equal tool-call IDs in sibling
-sessions cannot collide. Cancellation settles the matching card. DSH's own
+sessions cannot collide. Cancellation settles the matching card. A denial sent
+with `interrupt: true` also cancels the turn that asked: the root turn for a root
+card, only that child for a promoted child card. DSH's own
 delegated human-interaction policy is unchanged. Steering admission, pending
 permission clearing, and unique turn IDs are documented in [STEERING.md](./STEERING.md).
 

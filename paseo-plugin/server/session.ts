@@ -963,6 +963,14 @@ export class DshSession {
     this.#pendingPermissions.delete(permissionId);
     this.#options.emit({ type: "session.permission_resolved", sessionId: this.id, permissionId });
     pending.resolve(response);
+    // Deny-and-stop: after the rejection, cancel the turn that asked. A card
+    // promoted from a child stops only that child.
+    if (response.behavior === "deny" && response.interrupt === true) {
+      const owner = pending.sessionId === this.#dshSessionId ? this.id : pending.sessionId;
+      this.interrupt(owner).catch((error: unknown) => {
+        this.#options.log(`interrupt after denial failed: ${messageOf(error)}`);
+      });
+    }
   }
 
   /**
