@@ -12,6 +12,7 @@ import Schema from '@deepseek-ai/schemastery';
 import { exitOnStdinEnd, parseCmdline } from '@deepseek-ai/dsh-cmdline';
 import { PaseoTransport } from './transport.js';
 import { PaseoHarnessServer } from './server.js';
+import { randomUUID } from 'node:crypto';
 
 /** Stable Cordis plugin name. */
 export const name = 'paseo-bridge';
@@ -93,6 +94,15 @@ function startBridge(ctx, config = {}) {
   ctx.effect(() => {
     transport.start();
 
+    const askClient = (method, agent, params, signal) => {
+      const requestId = randomUUID();
+      const cancel = () => transport.notify('paseo/request/cancel', { requestId });
+      signal?.addEventListener('abort', cancel, { once: true });
+      return transport.request(method, {
+        ...server.subsessions.envelope(agent.session), ...params, requestId,
+      }, signal).finally(() => signal?.removeEventListener('abort', cancel));
+    };
+
     // DSH -> Paseo. Root-context registration matches how the shipped ACP
     // adapter claims `approval/request`; each listener answers only for the
     // sessions this server owns and otherwise delegates down the waterfall.
@@ -101,22 +111,25 @@ function startBridge(ctx, config = {}) {
       if (agent === undefined) return next();
       const sessionId = String(agent.session.id);
       if (!server.owns(sessionId)) return next();
-      return transport
-        .request(
-          'paseo/question',
-          {
-            sessionId,
-            callId: request.wait?.callId === undefined ? null : String(request.wait.callId),
-            timed: request.wait?.timed === true,
-            questions: request.questions,
-          },
-          request.signal,
-        )
+      return askClient('paseo/question', agent, {
+        callId: request.wait?.callId === undefined ? null : String(request.wait.callId),
+        timed: request.wait?.timed === true,
+        questions: request.questions,
+      }, request.signal)
         .then(normalizeAnswer);
+    });
+    const offApprovals = ctx.on('approval/request', (request, next) => {
+      if (request.agent === undefined || !server.owns(String(request.agent.session.id))) return next();
+      return askClient('paseo/approval', request.agent, {
+        callId: request.callId === undefined ? null : String(request.callId),
+        toolName: request.toolName,
+        ...(request.reason === undefined ? {} : { reason: request.reason }),
+      }, request.signal).then(answer => answer?.behavior === 'allow' ? 'allowed-once' : 'rejected');
     });
 
     return async () => {
       offQuestions();
+      offApprovals();
       await server.shutdown();
       transport.close();
     };
