@@ -14,9 +14,9 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { Icon } from "@getpaseo/plugin/client/react-native";
+import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Modal, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { z } from "zod";
 
 type Phase = "streaming" | "complete";
@@ -152,94 +152,33 @@ function usePacedText(text: string, streaming: boolean): string {
 
 const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
 
-/** The host's surface tokens may be translucent over a wallpaper; a sheet needs a solid one. */
-function sheetBackground(theme: Theme): string {
-  const value = theme.colors.foreground.trim();
-  let r = 255;
-  let g = 255;
-  let b = 255;
-  const hex = /^#([0-9a-f]{6})$/i.exec(value);
-  if (hex !== null) {
-    const n = Number.parseInt(hex[1] ?? "", 16);
-    r = (n >> 16) & 255;
-    g = (n >> 8) & 255;
-    b = n & 255;
-  } else {
-    const rgb = /rgba?\(([^)]+)\)/i.exec(value);
-    if (rgb !== null) {
-      const parts = (rgb[1] ?? "").split(",").map((part) => Number.parseFloat(part.trim()));
-      if (parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)) {
-        [r, g, b] = [parts[0] ?? 255, parts[1] ?? 255, parts[2] ?? 255];
-      }
-    }
-  }
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
-}
-
 function DetailSheet({
   open,
   onClose,
   title,
   icon,
-  mark,
   theme,
-  scrollRef,
-  onContentSizeChange,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   icon: string;
-  mark?: string;
   theme: Theme;
-  scrollRef?: React.RefObject<any>;
-  onContentSizeChange?: () => void;
   children: ReactNode;
 }) {
-  const { height } = useWindowDimensions();
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.modalRoot}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
-        <View
-          style={[
-            styles.sheet,
-            {
-              maxHeight: Math.max(240, Math.round(height * 0.78)),
-              backgroundColor: sheetBackground(theme),
-              borderColor: theme.colors.border,
-            },
-          ]}
-        >
-          <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
-          <View style={styles.sheetHeader}>
-            <View style={styles.lead}>
-              {mark === undefined ? (
-                <Icon name={icon} size={14} color={theme.colors.foregroundMuted} />
-              ) : (
-                <View style={[styles.mark, { borderColor: theme.colors.border }]}>
-                  <Text style={[styles.markText, { color: theme.colors.foregroundMuted }]}>{mark}</Text>
-                </View>
-              )}
-            </View>
-            <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
-            <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
-              <Icon name="X" size={16} color={theme.colors.foregroundMuted} />
-            </Pressable>
-          </View>
-          <ScrollView
-            ref={scrollRef}
-            style={styles.sheetScroll}
-            contentContainerStyle={styles.sheetContent}
-            onContentSizeChange={onContentSizeChange}
-            showsVerticalScrollIndicator
-          >
-            {children}
-          </ScrollView>
-        </View>
-      </View>
+    <Modal
+      title={title}
+      icon={<Icon name={icon} size={16} color={theme.colors.foregroundMuted} />}
+      open={open}
+      onOpenChange={(next: boolean) => {
+        if (!next) onClose();
+      }}
+    >
+      <Modal.Content scrollable>
+        <View style={styles.sheetBody}>{children}</View>
+      </Modal.Content>
     </Modal>
   );
 }
@@ -250,11 +189,6 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
   const text = item.data.text;
   const preview = streaming ? lastSentence(text) || "思考中…" : firstSentence(text) || "已思考";
   const revealed = usePacedText(text, streaming && open);
-  const body = useRef<any>(null);
-
-  useEffect(() => {
-    if (open && streaming) body.current?.scrollToEnd?.({ animated: false });
-  }, [open, streaming, revealed]);
 
   return (
     <View>
@@ -279,10 +213,6 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
         title="思考"
         icon="Brain"
         theme={theme}
-        scrollRef={body}
-        onContentSizeChange={() => {
-          if (streaming) body.current?.scrollToEnd?.({ animated: false });
-        }}
       >
         <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{revealed}</Text>
       </DetailSheet>
@@ -556,7 +486,6 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
         onClose={() => setOpen(false)}
         title={`${look.verb}${look.target === "" ? "" : ` ${look.target}`}`}
         icon={look.icon}
-        mark={look.mark}
         theme={theme}
       >
         {body === undefined ? null : (
@@ -656,22 +585,5 @@ const styles = {
   meta: { fontSize: 11 },
   mono: { fontFamily: MONO },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  modalRoot: { flex: 1, justifyContent: "flex-end" },
-  backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet: {
-    width: "100%",
-    maxWidth: 720,
-    alignSelf: "center",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    paddingBottom: 12,
-    overflow: "hidden",
-  },
-  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginTop: 8, marginBottom: 4 },
-  sheetHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
-  sheetTitle: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: "600" },
-  sheetScroll: { flexShrink: 1 },
-  sheetContent: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 },
+  sheetBody: { paddingBottom: 16 },
 } as const;
