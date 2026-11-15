@@ -550,7 +550,7 @@ const styles = {
   lead: { width: 17, height: 17, alignItems: "center", justifyContent: "center" },
   mark: { width: 17, height: 17, borderRadius: 4, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   markText: { fontSize: 8, fontWeight: "700", lineHeight: 10 },
-  verb: { fontSize: 12, fontWeight: "600" },
+  verb: { fontSize: 12, fontWeight: "600", minWidth: 24 },
   target: { flex: 1, minWidth: 0, fontSize: 12 },
   meta: { fontSize: 11 },
   body: {
