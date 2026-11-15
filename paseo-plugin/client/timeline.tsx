@@ -16,7 +16,7 @@ import type {
 } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { z } from "zod";
 
 type Phase = "streaming" | "complete";
@@ -177,6 +177,13 @@ function sheetBackground(theme: Theme): string {
   return luminance < 0.5 ? "#FFFFFF" : "#1C1C1E";
 }
 
+const SHEET_LIGHT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC";
+const SHEET_DARK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOQkZEDAACuAFdBWoCvAAAAAElFTkSuQmCC";
+
+function sheetImage(theme: Theme): string {
+  return sheetBackground(theme) === "#FFFFFF" ? SHEET_LIGHT : SHEET_DARK;
+}
+
 function DetailSheet({
   open,
   onClose,
@@ -193,18 +200,23 @@ function DetailSheet({
   children: ReactNode;
 }) {
   return (
-    <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[styles.sheetScreen, { backgroundColor: sheetBackground(theme) }]}>
-        <View style={[styles.sheetHeader, { borderColor: theme.colors.border }]}>
-          <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
-          <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
-          <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
-            <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
-          </Pressable>
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
+        <View style={[styles.sheet, { borderColor: theme.colors.border }]}>
+          <Image source={{ uri: sheetImage(theme) }} style={styles.sheetFill} resizeMode="stretch" />
+          <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.sheetHeader}>
+            <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
+            <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
+            <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
+              <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
+            </Pressable>
+          </View>
+          <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator>
+            {children}
+          </ScrollView>
         </View>
-        <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator>
-          {children}
-        </ScrollView>
       </View>
     </Modal>
   );
@@ -612,16 +624,24 @@ const styles = {
   meta: { fontSize: 11 },
   mono: { fontFamily: MONO },
   bodyText: { fontSize: 13, lineHeight: 20 },
-  sheetScreen: { flex: 1 },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
+  modalRoot: { flex: 1, justifyContent: "flex-end" },
+  backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheet: {
+    width: "100%",
+    maxWidth: 720,
+    height: "50%",
+    alignSelf: "center",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingBottom: 8,
+    overflow: "hidden",
   },
+  sheetFill: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginTop: 8, marginBottom: 4 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   sheetTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: "600" },
   sheetScroll: { flex: 1 },
-  sheetContent: { padding: 16, paddingBottom: 40 },
+  sheetContent: { paddingHorizontal: 16, paddingBottom: 32, paddingTop: 4 },
 } as const;
