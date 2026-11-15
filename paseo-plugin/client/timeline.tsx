@@ -14,9 +14,9 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Icon } from "@getpaseo/plugin/client/react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Modal, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { z } from "zod";
 
 type Phase = "streaming" | "complete";
@@ -152,26 +152,91 @@ function usePacedText(text: string, streaming: boolean): string {
 
 const MONO = Platform.OS === "ios" ? "Menlo" : "monospace";
 
+function DetailSheet({
+  open,
+  onClose,
+  title,
+  icon,
+  mark,
+  theme,
+  scrollRef,
+  onContentSizeChange,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  icon: string;
+  mark?: string;
+  theme: Theme;
+  scrollRef?: React.RefObject<any>;
+  onContentSizeChange?: () => void;
+  children: ReactNode;
+}) {
+  const { height } = useWindowDimensions();
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
+        <View
+          style={[
+            styles.sheet,
+            {
+              maxHeight: Math.max(240, Math.round(height * 0.78)),
+              backgroundColor: theme.colors.surface0,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <View style={[styles.handle, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.sheetHeader}>
+            <View style={styles.lead}>
+              {mark === undefined ? (
+                <Icon name={icon} size={14} color={theme.colors.foregroundMuted} />
+              ) : (
+                <View style={[styles.mark, { borderColor: theme.colors.border }]}>
+                  <Text style={[styles.markText, { color: theme.colors.foregroundMuted }]}>{mark}</Text>
+                </View>
+              )}
+            </View>
+            <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
+            <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
+              <Icon name="X" size={16} color={theme.colors.foregroundMuted} />
+            </Pressable>
+          </View>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.sheetScroll}
+            contentContainerStyle={styles.sheetContent}
+            onContentSizeChange={onContentSizeChange}
+            showsVerticalScrollIndicator
+          >
+            {children}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
   const streaming = item.data.phase === "streaming";
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
   const text = item.data.text;
   const preview = streaming ? lastSentence(text) || "思考中…" : firstSentence(text) || "已思考";
-  const revealed = usePacedText(text, streaming);
-  const body = useRef<{ scrollToEnd?: (options?: { animated?: boolean }) => void } | null>(null);
+  const revealed = usePacedText(text, streaming && open);
+  const body = useRef<any>(null);
 
   useEffect(() => {
-    if (expanded && streaming) body.current?.scrollToEnd?.({ animated: false });
-  }, [expanded, streaming, revealed]);
-
-  const toggle = useCallback(() => setExpanded((value) => !value), []);
+    if (open && streaming) body.current?.scrollToEnd?.({ animated: false });
+  }, [open, streaming, revealed]);
 
   return (
     <View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={streaming ? "思考中" : "已思考"}
-        onPress={toggle}
+        onPress={() => setOpen(true)}
         style={styles.row}
       >
         <View style={styles.lead}>
@@ -181,19 +246,21 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
         <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
           {preview}
         </Text>
-        <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={12} color={theme.colors.foregroundMuted} />
+        <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
       </Pressable>
-      {expanded ? (
-        <ScrollView
-          ref={body}
-          style={[styles.body, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface1 }]}
-          onContentSizeChange={() => {
-            if (streaming) body.current?.scrollToEnd?.({ animated: false });
-          }}
-        >
-          <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{revealed}</Text>
-        </ScrollView>
-      ) : null}
+      <DetailSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="思考"
+        icon="Brain"
+        theme={theme}
+        scrollRef={body}
+        onContentSizeChange={() => {
+          if (streaming) body.current?.scrollToEnd?.({ animated: false });
+        }}
+      >
+        <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{revealed}</Text>
+      </DetailSheet>
     </View>
   );
 }
@@ -419,18 +486,20 @@ function detailBody(data: ToolData): string | undefined {
 }
 
 function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
   const data = item.data;
   const look = useMemo(() => toolLook(data), [data]);
   const body = useMemo(() => detailBody(data), [data]);
   const failed = data.status === "failed";
-  const toggle = useCallback(() => setExpanded((value) => !value), []);
+  const openSheet = useCallback(() => {
+    if (body !== undefined) setOpen(true);
+  }, [body]);
   return (
     <View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${look.verb}${look.target === "" ? "" : ` ${look.target}`}`}
-        onPress={toggle}
+        onPress={openSheet}
         style={styles.row}
       >
         <View style={styles.lead}>
@@ -454,14 +523,21 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
           </Text>
         )}
         {body === undefined ? null : (
-          <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={12} color={theme.colors.foregroundMuted} />
+          <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
         )}
       </Pressable>
-      {expanded && body !== undefined ? (
-        <ScrollView style={[styles.body, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface1 }]}>
-          <Text selectable style={[styles.bodyText, { color: theme.colors.foreground, fontFamily: MONO }]}>{body}</Text>
-        </ScrollView>
-      ) : null}
+      <DetailSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`${look.verb}${look.target === "" ? "" : ` ${look.target}`}`}
+        icon={look.icon}
+        mark={look.mark}
+        theme={theme}
+      >
+        {body === undefined ? null : (
+          <Text selectable style={[styles.bodyText, styles.mono, { color: theme.colors.foreground }]}>{body}</Text>
+        )}
+      </DetailSheet>
     </View>
   );
 }
@@ -553,14 +629,24 @@ const styles = {
   verb: { fontSize: 12, fontWeight: "600", minWidth: 24 },
   target: { flex: 1, minWidth: 0, fontSize: 12 },
   meta: { fontSize: 11 },
-  body: {
-    maxHeight: 320,
+  mono: { fontFamily: MONO },
+  bodyText: { fontSize: 13, lineHeight: 20 },
+  modalRoot: { flex: 1, justifyContent: "flex-end" },
+  backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheet: {
+    width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     borderWidth: 1,
-    borderRadius: 8,
-    marginTop: 1,
-    marginBottom: 3,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderBottomWidth: 0,
+    paddingBottom: 12,
+    overflow: "hidden",
   },
-  bodyText: { fontSize: 12, lineHeight: 18 },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginTop: 8, marginBottom: 4 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  sheetTitle: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: "600" },
+  sheetScroll: { flexShrink: 1 },
+  sheetContent: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 },
 } as const;
