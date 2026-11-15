@@ -545,6 +545,7 @@ const styles = {
     paddingVertical: 2,
     paddingHorizontal: 2,
     minHeight: 24,
+    marginVertical: -3,
   },
   lead: { width: 17, height: 17, alignItems: "center", justifyContent: "center" },
   mark: { width: 17, height: 17, borderRadius: 4, borderWidth: 1, alignItems: "center", justifyContent: "center" },
