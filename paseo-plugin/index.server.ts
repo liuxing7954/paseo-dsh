@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { extname, isAbsolute, resolve } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { imagePreviewRpc } from "./shared/image-preview";
@@ -16,6 +16,7 @@ import { createDshProvider } from "./server/provider";
  * failure surfaces as an honest error when a session tries to start `dsh`.
  */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const HARD_MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 
 const IMAGE_MIME: Readonly<Record<string, string>> = {
   ".png": "image/png",
@@ -44,20 +45,37 @@ export default function contribute(server: PluginServerContext) {
 
   server.registerSettings(timelineStyleSettings);
   server.handle(imagePreviewRpc, async (input) => {
+    const empty = { dataUri: null, mime: null, error: null, bytes: null, limit: MAX_IMAGE_BYTES, tooLarge: false };
     const absolute = isAbsolute(input.path) ? input.path : resolve(input.cwd || process.cwd(), input.path);
     const mime = IMAGE_MIME[extname(absolute).toLowerCase()];
     if (mime === undefined) {
-      return { dataUri: null, mime: null, error: "不支持的图片格式" };
+      return { ...empty, error: "不支持的图片格式" };
     }
     try {
-      const bytes = await readFile(absolute);
-      if (bytes.byteLength > MAX_IMAGE_BYTES) {
-        return { dataUri: null, mime, error: "图片过大（超过 12MB）" };
+      const entry = await stat(absolute);
+      if (!entry.isFile()) return { ...empty, mime, error: "不是文件" };
+      if (entry.size > HARD_MAX_IMAGE_BYTES) {
+        return { ...empty, mime, bytes: entry.size, error: "图片超过 64MB 硬上限，无法预览" };
       }
-      return { dataUri: `data:${mime};base64,${bytes.toString("base64")}`, mime, error: null };
+      if (entry.size > MAX_IMAGE_BYTES && input.allowLarge !== true) {
+        return {
+          ...empty,
+          mime,
+          bytes: entry.size,
+          tooLarge: true,
+          error: `图片较大（${(entry.size / 1024 / 1024).toFixed(1)}MB，超过 12MB 预览上限）`,
+        };
+      }
+      const bytes = await readFile(absolute);
+      return {
+        ...empty,
+        dataUri: `data:${mime};base64,${bytes.toString("base64")}`,
+        mime,
+        bytes: bytes.byteLength,
+      };
     } catch (error) {
       return {
-        dataUri: null,
+        ...empty,
         mime,
         error: error instanceof Error ? error.message : String(error),
       };

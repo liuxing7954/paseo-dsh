@@ -298,28 +298,48 @@ function ImagePreview({ agentId, path, theme }: { agentId: string; path: string;
   const readImage = useRpc(imagePreviewRpc);
   const window = useWindowDimensions();
   const [state, setState] = useState<
-    { status: "loading" } | { status: "ready"; uri: string } | { status: "error"; error: string }
+    | { status: "loading" }
+    | { status: "ready"; uri: string }
+    | { status: "tooLarge"; error: string }
+    | { status: "error"; error: string }
   >({ status: "loading" });
-  useEffect(() => {
-    let cancelled = false;
-    setState({ status: "loading" });
-    void readImage({ cwd, path })
-      .then((result) => {
-        if (cancelled) return;
-        if (result.dataUri !== null) setState({ status: "ready", uri: result.dataUri });
-        else setState({ status: "error", error: result.error ?? "无法读取图片" });
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
+
+  const load = useCallback(
+    (allowLarge: boolean) => {
+      setState({ status: "loading" });
+      void readImage({ cwd, path, allowLarge })
+        .then((result) => {
+          if (result.dataUri !== null) {
+            setState({ status: "ready", uri: result.dataUri });
+          } else if (result.tooLarge) {
+            setState({ status: "tooLarge", error: result.error ?? "图片较大" });
+          } else {
+            setState({ status: "error", error: result.error ?? "无法读取图片" });
+          }
+        })
+        .catch((error: unknown) => {
           setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [cwd, path, readImage]);
+        });
+    },
+    [cwd, path, readImage],
+  );
+
+  useEffect(() => {
+    load(false);
+  }, [load]);
+
   if (state.status === "loading") {
     return <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>载入图片…</Text>;
+  }
+  if (state.status === "tooLarge") {
+    return (
+      <View style={styles.imageTooLarge}>
+        <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>{state.error}</Text>
+        <Pressable onPress={() => load(true)} accessibilityLabel="仍要加载" hitSlop={6}>
+          <Text style={[styles.imageLoadAnyway, { color: theme.colors.accent }]}>仍要加载</Text>
+        </Pressable>
+      </View>
+    );
   }
   if (state.status === "error") {
     return <Text style={[styles.imageHint, { color: theme.colors.statusDanger }]}>{state.error}</Text>;
@@ -1397,6 +1417,8 @@ const styles = {
   imageFrame: { borderWidth: 1, borderRadius: 8, overflow: "hidden", alignItems: "center", justifyContent: "center" },
   image: { width: "100%", height: "100%" },
   imageHint: { fontSize: 12, paddingVertical: 6 },
+  imageTooLarge: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  imageLoadAnyway: { fontSize: 12, fontWeight: "600" },
   imageCaption: { fontSize: 12, lineHeight: 17 },
   inlineReasoning: { marginTop: 6, marginBottom: 10, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   inlineCodeBox: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
