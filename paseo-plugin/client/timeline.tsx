@@ -257,6 +257,32 @@ function RunningDot({ color }: { color: string }) {
   );
 }
 
+/** The full command, on its own solid surface, capped so extreme lines scroll. */
+function CommandBlock({ text, theme, maxHeight }: { text: string; theme: Theme; maxHeight?: number }) {
+  const background = sheetBackground(theme);
+  return (
+    <View
+      style={[
+        styles.commandBox,
+        { borderColor: theme.colors.border },
+        Platform.OS === "web"
+          ? ({ backgroundImage: `linear-gradient(${background}, ${background})` } as any)
+          : { backgroundColor: background },
+      ]}
+    >
+      <ScrollView
+        style={maxHeight === undefined ? undefined : { maxHeight }}
+        contentContainerStyle={styles.commandContent}
+        showsVerticalScrollIndicator
+      >
+        <Text selectable style={[styles.commandText, styles.mono, { color: theme.colors.foreground }]}>
+          {text}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 function SheetPanel({
   title,
   subject,
@@ -320,22 +346,11 @@ function SheetPanel({
         </Pressable>
       </View>
       {subject === undefined || subject === "" ? null : subjectWrap ? (
-        <View style={[styles.commandBox, { borderColor: theme.colors.border }]}>
-          <ScrollView
-            style={{
-              maxHeight: Math.max(
-                style.commandMinHeight,
-                Math.round(window.height * style.commandMaxHeightRatio),
-              ),
-            }}
-            contentContainerStyle={styles.commandContent}
-            showsVerticalScrollIndicator
-          >
-            <Text selectable style={[styles.commandText, styles.mono, { color: theme.colors.foreground }]}>
-              {subject}
-            </Text>
-          </ScrollView>
-        </View>
+        <CommandBlock
+          text={subject}
+          theme={theme}
+          maxHeight={Math.max(style.commandMinHeight, Math.round(window.height * style.commandMaxHeightRatio))}
+        />
       ) : (
         <Text numberOfLines={1} selectable style={[styles.sheetSubject, styles.mono, { color: theme.colors.foregroundMuted }]}>
           {subject}
@@ -413,9 +428,11 @@ function DetailSheet({
   );
 }
 
-function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
+function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<ReasoningData>) {
   const streaming = item.data.phase === "streaming";
+  const inline = layout.platform === "web";
   const [open, setOpen] = useState(false);
+  const window = useWindowDimensions();
   const text = item.data.text;
   const preview = streaming ? lastSentence(text) || "思考中…" : firstSentence(text) || "已思考";
   const revealed = usePacedText(text, streaming && open);
@@ -436,7 +453,7 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={streaming ? "思考中" : "已思考"}
-        onPress={() => setOpen(true)}
+        onPress={() => (inline ? setOpen((value) => !value) : setOpen(true))}
         hitSlop={6}
         style={({ pressed }: { pressed: boolean }) => [
           row,
@@ -450,8 +467,30 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
         <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
           {preview}
         </Text>
-        <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
+        <View style={{ transform: [{ rotate: inline && open ? "90deg" : "0deg" }] }}>
+          <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
+        </View>
       </Pressable>
+      {inline && open ? (
+        <View
+          style={[
+            styles.inlineReasoning,
+            { borderColor: theme.colors.border },
+            Platform.OS === "web"
+              ? ({ backgroundImage: `linear-gradient(${sheetBackground(theme)}, ${sheetBackground(theme)})` } as any)
+              : { backgroundColor: sheetBackground(theme) },
+          ]}
+        >
+          <ScrollView
+            style={{ maxHeight: Math.max(160, Math.round(window.height * 0.35)) }}
+            contentContainerStyle={styles.inlineReasoningContent}
+            showsVerticalScrollIndicator
+          >
+            <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{revealed}</Text>
+          </ScrollView>
+        </View>
+      ) : null}
+      {inline ? null : (
       <DetailSheet
         open={open}
         onClose={() => setOpen(false)}
@@ -462,6 +501,7 @@ function ReasoningRow({ item, theme }: PluginTimelineItemProps<ReasoningData>) {
       >
         <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{revealed}</Text>
       </DetailSheet>
+      )}
     </View>
   );
 }
@@ -995,8 +1035,17 @@ function HighlightedText({ text, language, theme }: { text: string; language: La
 }
 
 function CodeBox({ text, language, theme }: { text: string; language: Language; theme: Theme }) {
+  const background = sheetBackground(theme);
   return (
-    <View style={[styles.codeBox, { borderColor: theme.colors.border }]}>
+    <View
+      style={[
+        styles.codeBox,
+        { borderColor: theme.colors.border },
+        Platform.OS === "web"
+          ? ({ backgroundImage: `linear-gradient(${background}, ${background})` } as any)
+          : { backgroundColor: background },
+      ]}
+    >
       <ScrollView style={styles.codeScroll} contentContainerStyle={styles.codeScrollContent} showsVerticalScrollIndicator>
         <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.codeRow}>
           <HighlightedText text={text} language={language} theme={theme} />
@@ -1006,8 +1055,42 @@ function CodeBox({ text, language, theme }: { text: string; language: Language; 
   );
 }
 
-function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
+/** Content-sized code surface for the desktop inline expansion, capped by maxHeight. */
+function InlineCodeBox({
+  text,
+  language,
+  theme,
+  maxHeight,
+}: {
+  text: string;
+  language: Language;
+  theme: Theme;
+  maxHeight: number;
+}) {
+  const background = sheetBackground(theme);
+  return (
+    <View
+      style={[
+        styles.inlineCodeBox,
+        { borderColor: theme.colors.border },
+        Platform.OS === "web"
+          ? ({ backgroundImage: `linear-gradient(${background}, ${background})` } as any)
+          : { backgroundColor: background },
+      ]}
+    >
+      <ScrollView style={{ maxHeight }} contentContainerStyle={styles.codeScrollContent} showsVerticalScrollIndicator>
+        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.codeRow}>
+          <HighlightedText text={text} language={language} theme={theme} />
+        </ScrollView>
+      </ScrollView>
+    </View>
+  );
+}
+
+function ToolRow({ item, theme, layout }: PluginTimelineItemProps<ToolData>) {
   const [open, setOpen] = useState(false);
+  const inline = layout.platform === "web";
+  const window = useWindowDimensions();
   const data = item.data;
   const look = useMemo(() => toolLook(data), [data]);
   const content = useMemo(() => toolContent(data), [data]);
@@ -1026,8 +1109,9 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
     gap: spacing.toolRowGap,
   };
   const openSheet = useCallback(() => {
-    if (content !== undefined) setOpen(true);
-  }, [content]);
+    if (content === undefined) return;
+    setOpen((value) => (inline ? !value : true));
+  }, [content, inline]);
   return (
     <View>
       <Pressable
@@ -1063,9 +1147,29 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
           </Text>
         )}
         {content === undefined ? null : (
-          <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
+          <View style={{ transform: [{ rotate: inline && open ? "90deg" : "0deg" }] }}>
+            <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
+          </View>
         )}
       </Pressable>
+      {inline && open && content !== undefined ? (
+        <View style={styles.inlineTool}>
+          {wrapSubject && subject !== "" ? (
+            <CommandBlock
+              text={subject}
+              theme={theme}
+              maxHeight={Math.max(120, Math.round(window.height * 0.25))}
+            />
+          ) : null}
+          <InlineCodeBox
+            text={content}
+            language={language}
+            theme={theme}
+            maxHeight={Math.max(160, Math.round(window.height * 0.4))}
+          />
+        </View>
+      ) : null}
+      {inline ? null : (
       <DetailSheet
         open={open}
         onClose={() => setOpen(false)}
@@ -1079,6 +1183,7 @@ function ToolRow({ item, theme }: PluginTimelineItemProps<ToolData>) {
       >
         {content === undefined ? null : <CodeBox text={content} language={language} theme={theme} />}
       </DetailSheet>
+      )}
     </View>
   );
 }
@@ -1206,6 +1311,10 @@ const styles = {
   },
   commandContent: { paddingHorizontal: 10, paddingVertical: 8 },
   commandText: { fontSize: 12, lineHeight: 18 },
+  inlineTool: { marginTop: 6, marginBottom: 10, paddingHorizontal: 2, gap: 0 },
+  inlineReasoning: { marginTop: 6, marginBottom: 10, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
+  inlineCodeBox: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
+  inlineReasoningContent: { padding: 10 },
   sheetScroll: { flex: 1 },
   sheetContent: { paddingHorizontal: 16, paddingBottom: 32, paddingTop: 4 },
   sheetBody: { flex: 1, paddingHorizontal: 16, paddingBottom: 16, paddingTop: 4 },
