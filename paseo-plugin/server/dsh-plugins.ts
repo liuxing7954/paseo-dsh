@@ -25,12 +25,15 @@ import { join } from "node:path";
 import type {
   BundleInfo,
   BundleRow,
+  FailureCode,
   JobKind,
   JobState,
+  InspectSpecOutput,
   JobStatus,
   PluginsSnapshot,
   SetEnabledOutput,
   StartJobInput,
+  StartJobOutput,
 } from "../shared/dsh-plugins-api";
 import { dshHomeDir, profileDir, profileName } from "./bootstrap";
 import { resolveDshCommand } from "./dsh-command.mjs";
@@ -69,11 +72,38 @@ interface Job {
   kind: JobKind;
   state: JobState;
   output: string;
-  error?: string;
+  errorCode?: FailureCode;
+  errorDetail?: string;
   updates?: Record<string, string>;
   startedAt: number;
   finishedAt?: number;
   child?: ChildProcess;
+}
+
+export class ManagerError extends Error {
+  readonly code: FailureCode;
+  readonly detail?: string;
+
+  constructor(code: FailureCode, detail?: string) {
+    super(code);
+    this.name = "ManagerError";
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+export function failureOf(error: unknown): { errorCode: FailureCode; errorDetail?: string } {
+  if (error instanceof ManagerError) {
+    return {
+      errorCode: error.code,
+      ...(error.detail === undefined ? {} : { errorDetail: error.detail }),
+    };
+  }
+  const detail = errorMessage(error);
+  return {
+    errorCode: "command-failed",
+    ...(detail === "" ? {} : { errorDetail: detail }),
+  };
 }
 
 export interface DshPluginsOptions {
@@ -109,14 +139,14 @@ function readProfileManifest(dir: string): ProfileManifest {
   try {
     text = readFileSync(path, "utf8");
   } catch {
-    throw new Error(`读不到 profile 的 package.json：${path}`);
+    throw new ManagerError("profile-unreadable", path);
   }
   try {
     const parsed: unknown = JSON.parse(text);
     if (!isRecord(parsed)) throw new Error("not an object");
     return parsed as ProfileManifest;
   } catch {
-    throw new Error(`profile 的 package.json 不是有效 JSON：${path}`);
+    throw new ManagerError("profile-invalid", path);
   }
 }
 
@@ -201,13 +231,10 @@ function bundlePlatformSupport(
     || platforms.length === 0
     || !platforms.every((value) => typeof value === "string" && NODE_PLATFORMS.has(value))
   ) {
-    return { supported: false, reason: "dsh.bundle.platforms 声明无效，不能启用。" };
+    return { supported: false, reason: "" };
   }
   if (!platforms.includes(process.platform)) {
-    return {
-      supported: false,
-      reason: `当前平台 ${process.platform} 不在支持列表（${platforms.join(", ")}）中，不能启用。`,
-    };
+    return { supported: false, reason: platforms.join(", ") };
   }
   return { supported: true };
 }
@@ -360,7 +387,7 @@ async function withPackageLock<T>(dir: string, action: () => Promise<T> | T): Pr
         continue;
       }
       if (Date.now() >= deadline) {
-        throw new Error(`等待 profile 写锁超时（${Math.round(LOCK_WAIT_MS / 1000)} 秒）。`);
+        throw new ManagerError("lock-timeout", `package.json.lock (${Math.round(LOCK_WAIT_MS / 1000)}s)`);
       }
       await sleep(100);
     } finally {
@@ -415,6 +442,22 @@ export class DshPlugins {
 
   /** Read the profile inventory. Never starts a package operation. */
   async list(): Promise<PluginsSnapshot> {
+    try {
+      return await this.#snapshot();
+    } catch (error) {
+      const failure = failureOf(error);
+      return {
+        profile: this.profile,
+        dir: this.dir,
+        displayDir: shortDir(this.dir),
+        bundles: [],
+        busy: false,
+        ...failure,
+      };
+    }
+  }
+
+  async #snapshot(): Promise<PluginsSnapshot> {
     const manifest = readProfileManifest(this.dir);
     const deps = dependencies(manifest);
     const selected = selectedBundles(manifest);
@@ -450,9 +493,9 @@ export class DshPlugins {
    */
   async setEnabled(name: string, enabled: boolean): Promise<SetEnabledOutput> {
     const bundleName = name.trim();
-    if (bundleName === "") throw new Error("bundle 名称不能为空。");
+    if (bundleName === "") throw new ManagerError("invalid-name");
     if (PROTECTED_BUNDLES.has(bundleName)) {
-      throw new Error(`${bundleName} 是受保护的 bundle，不能更改。`);
+      throw new ManagerError("protected", bundleName);
     }
 
     return withPackageLock(this.dir, () => {
@@ -461,21 +504,21 @@ export class DshPlugins {
       const current = selectedBundles(manifest);
       if (enabled) {
         if (deps[bundleName] === undefined) {
-          throw new Error(`${bundleName} 没有安装，不能启用。`);
+          throw new ManagerError("not-installed", bundleName);
         }
         const installed = readInstalledPackage(this.dir, bundleName);
         if (installed === undefined || !hasBundleManifest(installed)) {
-          throw new Error(`${bundleName} 没有声明 dsh.bundle，不能加入 profile 层。`);
+          throw new ManagerError("not-a-bundle", bundleName);
         }
         const platform = bundlePlatformSupport(installed);
-        if (!platform.supported) throw new Error(platform.reason);
+        if (!platform.supported) throw new ManagerError("invalid-platform", platform.reason);
         if (current.includes(bundleName)) {
-          return { changed: false, enabled: true };
+          return { ok: true, changed: false, enabled: true };
         }
         current.push(bundleName);
       } else {
         if (!current.includes(bundleName)) {
-          return { changed: false, enabled: false };
+          return { ok: true, changed: false, enabled: false };
         }
         const index = current.indexOf(bundleName);
         current.splice(index, 1);
@@ -485,54 +528,39 @@ export class DshPlugins {
       const profile = isRecord(dsh.profile) ? dsh.profile : {};
       manifest.dsh = { ...dsh, profile: { ...profile, bundles: current } };
       writeProfileManifest(this.dir, manifest);
-      return { changed: true, enabled };
+      return { ok: true, changed: true, enabled };
     });
   }
 
   /** Inspect an npm registry spec before the user commits to installing it. */
-  async inspectSpec(spec: string): Promise<{
-    ok: boolean;
-    name?: string;
-    version?: string;
-    description?: string;
-    client: boolean;
-    error?: string;
-  }> {
+  async inspectSpec(spec: string): Promise<InspectSpecOutput> {
     const value = spec.trim();
     if (!isRegistrySpec(value)) {
-      return {
-        ok: false,
-        client: false,
-        error: "只支持 npm registry 包名，例如 pkg 或 pkg@1.2.3；本地路径、git、tarball 都不支持。",
-      };
+      return { ok: false, client: false, errorCode: "invalid-spec" };
     }
 
     let result: RunResult;
     try {
       result = await this.#runPlugin(["view", value, "--json"], VIEW_TIMEOUT_MS);
     } catch (error) {
-      return { ok: false, client: false, error: errorMessage(error) };
+      return { ok: false, client: false, ...failureOf(error) };
     }
     if (result.code !== 0) {
-      return { ok: false, client: false, error: this.#commandError(result) };
+      return { ok: false, client: false, ...this.#commandFailure(result) };
     }
 
     let manifest: unknown;
     try {
       manifest = parseJsonLoose(result.stdout);
     } catch {
-      return { ok: false, client: false, error: "无法解析 registry 返回的包信息。" };
+      return { ok: false, client: false, errorCode: "registry-unreadable" };
     }
     if (!isRecord(manifest)) {
-      return { ok: false, client: false, error: "registry 没有返回有效的包信息。" };
+      return { ok: false, client: false, errorCode: "registry-invalid" };
     }
     const dsh = packageDsh(manifest);
     if (!isRecord(dsh?.bundle)) {
-      return {
-        ok: false,
-        client: false,
-        error: "这个包没有声明 dsh.bundle，装进 profile 不会生效。",
-      };
+      return { ok: false, client: false, errorCode: "not-a-bundle" };
     }
 
     return {
@@ -545,10 +573,10 @@ export class DshPlugins {
   }
 
   /** Start one package operation. At most one may run at a time. */
-  startJob(input: StartJobInput): { id: string } {
-    if (this.#disposed) throw new Error("插件已卸载，不能开始新的任务。");
+  startJob(input: StartJobInput): StartJobOutput {
+    if (this.#disposed) throw new ManagerError("disposed");
     if (this.#activeJobId !== undefined) {
-      throw new Error("已有管理任务在运行，请等待它完成。");
+      throw new ManagerError("busy", this.#activeJobId);
     }
     const job: Job = {
       id: randomUUID(),
@@ -566,8 +594,9 @@ export class DshPlugins {
       })
       .catch((error) => {
         job.state = "failed";
-        job.error = errorMessage(error);
-        if (job.output.trim() === "") job.output = job.error;
+        const failure = failureOf(error);
+        job.errorCode = failure.errorCode;
+        job.errorDetail = failure.errorDetail;
       })
       .finally(() => {
         job.finishedAt = Date.now();
@@ -575,18 +604,19 @@ export class DshPlugins {
         this.#pruneJobs();
       });
 
-    return { id: job.id };
+    return { ok: true, id: job.id };
   }
 
   status(id: string): JobStatus {
     const job = this.#jobs.get(id);
-    if (job === undefined) throw new Error("任务不存在或已过期。");
+    if (job === undefined) throw new ManagerError("job-missing", id);
     return {
       id: job.id,
       kind: job.kind,
       state: job.state,
       output: job.output,
-      ...(job.error === undefined ? {} : { error: job.error }),
+      ...(job.errorCode === undefined ? {} : { errorCode: job.errorCode }),
+      ...(job.errorDetail === undefined ? {} : { errorDetail: job.errorDetail }),
       ...(job.updates === undefined ? {} : { updates: job.updates }),
       startedAt: job.startedAt,
       ...(job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt }),
@@ -603,7 +633,7 @@ export class DshPlugins {
       if (job !== undefined) {
         if (job.child !== undefined) killTree(job.child);
         job.state = "failed";
-        job.error = "插件已卸载，任务中止。";
+        job.errorCode = "disposed";
         job.finishedAt = Date.now();
       }
       this.#activeJobId = undefined;
@@ -637,7 +667,7 @@ export class DshPlugins {
     const platform = pkg === undefined ? { supported: true as const } : bundlePlatformSupport(pkg);
     const rows = pkg === undefined ? [] : readRows(join(this.dir, "node_modules", name), pkg);
     const description = official
-      ? "DeepSeek Harness 基础 bundle"
+      ? ""
       : pkg !== undefined
         ? stringValue(pkg.description) ?? ""
         : "";
@@ -680,56 +710,58 @@ export class DshPlugins {
       case "install": {
         const spec = input.spec.trim();
         const inspected = await this.inspectSpec(spec);
-        if (!inspected.ok) throw new Error(inspected.error ?? "无法检查这个包。");
+        if (!inspected.ok) {
+          throw new ManagerError(inspected.errorCode ?? "command-failed", inspected.errorDetail);
+        }
         const name = inspected.name ?? registryName(spec);
         const manifest = readProfileManifest(this.dir);
         if (dependencies(manifest)[name] !== undefined) {
-          throw new Error(`${name} 已经安装；请在列表里启用它，或使用更新。`);
+          throw new ManagerError("already-installed", name);
         }
         const result = await this.#runPlugin(
           ["add", "--save-exact", spec],
           INSTALL_TIMEOUT_MS,
           job,
         );
-        if (result.code !== 0) throw new Error(this.#commandError(result));
+        if (result.code !== 0) throw new ManagerError("command-failed", this.#commandFailure(result).errorDetail);
         return;
       }
       case "remove": {
         const name = input.name.trim();
         if (PROTECTED_BUNDLES.has(name)) {
-          throw new Error(`${name} 是受保护的 bundle，不能卸载。`);
+          throw new ManagerError("protected", name);
         }
         const manifest = readProfileManifest(this.dir);
         if (dependencies(manifest)[name] === undefined) {
-          throw new Error(`只有 package.json 依赖里的包可以卸载：${name}`);
+          throw new ManagerError("not-removable", name);
         }
         const result = await this.#runPlugin(["remove", name], INSTALL_TIMEOUT_MS, job);
-        if (result.code !== 0) throw new Error(this.#commandError(result));
+        if (result.code !== 0) throw new ManagerError("command-failed", this.#commandFailure(result).errorDetail);
         return;
       }
       case "update": {
         const name = input.name.trim();
         const version = input.version.trim();
         if (PROTECTED_BUNDLES.has(name)) {
-          throw new Error(`${name} 是受保护的 bundle，不能更新。`);
+          throw new ManagerError("protected", name);
         }
         if (!isRegistrySpec(`${name}@${version}`)) {
-          throw new Error("更新版本不是有效的 registry 版本。");
+          throw new ManagerError("invalid-version", version);
         }
         const manifest = readProfileManifest(this.dir);
         if (dependencies(manifest)[name] === undefined) {
-          throw new Error(`${name} 不在 profile 依赖里，不能更新。`);
+          throw new ManagerError("not-in-dependencies", name);
         }
         const installed = readInstalledPackage(this.dir, name);
         if (installed === undefined || !hasBundleManifest(installed)) {
-          throw new Error(`${name} 不是 DSH bundle，不能更新。`);
+          throw new ManagerError("not-a-bundle", name);
         }
         const result = await this.#runPlugin(
           ["add", "--save-exact", `${name}@${version}`],
           INSTALL_TIMEOUT_MS,
           job,
         );
-        if (result.code !== 0) throw new Error(this.#commandError(result));
+        if (result.code !== 0) throw new ManagerError("command-failed", this.#commandFailure(result).errorDetail);
         this.#updates.delete(name);
         return;
       }
@@ -741,24 +773,24 @@ export class DshPlugins {
 
   async #checkUpdates(job: Job): Promise<void> {
     const snapshot = await this.list();
+    if (snapshot.errorCode !== undefined) {
+      throw new ManagerError(snapshot.errorCode, snapshot.errorDetail);
+    }
     const candidates = snapshot.bundles.filter((bundle) => bundle.updatable);
     this.#updates.clear();
     if (candidates.length === 0) {
-      job.output = `${job.output}没有可检查更新的 bundle。\n`;
       job.updates = {};
       return;
     }
 
     const failures: string[] = [];
     for (const bundle of candidates) {
-      job.output = `${job.output}检查 ${bundle.name}…\n`.slice(-OUTPUT_LIMIT);
       const result = await this.#runPlugin(
         ["view", bundle.name, "version", "--json"],
         VIEW_TIMEOUT_MS,
-        job,
       );
       if (result.code !== 0) {
-        failures.push(`${bundle.name}：${lastLines(result.output, 4) || "查询失败"}`);
+        failures.push(`${bundle.name}: ${lastLines(result.output, 4)}`);
         continue;
       }
       let latest: string | undefined;
@@ -773,7 +805,7 @@ export class DshPlugins {
         latest = undefined;
       }
       if (latest === undefined) {
-        failures.push(`${bundle.name}：无法解析最新版本`);
+        failures.push(`${bundle.name}: unreadable version`);
         continue;
       }
       if (bundle.version !== undefined && isNewer(latest, bundle.version)) {
@@ -782,16 +814,17 @@ export class DshPlugins {
     }
     job.updates = Object.fromEntries(this.#updates);
     if (failures.length > 0) {
-      throw new Error(`部分 bundle 检查失败：\n${failures.join("\n")}`);
+      throw new ManagerError("check-failed", failures.join("\n"));
     }
   }
 
-  #commandError(result: RunResult): string {
-    const reason = result.timedOut
-      ? "命令超时"
-      : `命令退出码 ${result.code}`;
+  #commandFailure(result: RunResult): { errorCode: "command-failed"; errorDetail: string } {
+    const reason = result.timedOut ? "timeout" : `exit ${result.code}`;
     const tail = lastLines(result.output, 20);
-    return tail === "" ? reason : `${reason}\n${tail}`;
+    return {
+      errorCode: "command-failed",
+      errorDetail: tail === "" ? reason : `${reason}\n${tail}`,
+    };
   }
 
   async #getDshVersion(): Promise<string | undefined> {
@@ -815,7 +848,7 @@ export class DshPlugins {
 
   #runDsh(args: string[], timeoutMs: number, job?: Job): Promise<RunResult> {
     if (this.#disposed) {
-      return Promise.reject(new Error("插件已卸载，不能启动新的进程。"));
+      return Promise.reject(new ManagerError("disposed"));
     }
     return new Promise((resolve, reject) => {
       let child: ChildProcess;
@@ -829,7 +862,7 @@ export class DshPlugins {
           detached: process.platform !== "win32",
         });
       } catch (error) {
-        reject(new Error(`无法启动 ${launch.command}：${errorMessage(error)}`));
+        reject(new ManagerError("spawn-failed", `${launch.command}: ${errorMessage(error)}`));
         return;
       }
 
@@ -884,7 +917,7 @@ export class DshPlugins {
       });
       child.on("error", (error) => {
         this.#children.delete(child);
-        fail(new Error(`无法启动 ${resolveDshBinary()}：${error.message}`));
+        fail(new ManagerError("spawn-failed", `${resolveDshBinary()}: ${error.message}`));
       });
       child.on("close", (code) => {
         this.#children.delete(child);

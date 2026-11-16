@@ -6,10 +6,43 @@ import { z } from "zod";
  *
  * Kept in one file so the client and server cannot drift: both import these
  * schemas, and Paseo parses every input/output at the RPC boundary.
+ *
+ * Failures cross this boundary as a code plus optional raw detail. The daemon
+ * never writes user-facing sentences: the page chooses the language.
  */
 
 export const jobKindSchema = z.enum(["install", "remove", "update", "check"]);
 export const jobStateSchema = z.enum(["running", "succeeded", "failed"]);
+
+export const failureCodeSchema = z.enum([
+  "profile-unreadable",
+  "profile-invalid",
+  "invalid-platform",
+  "lock-timeout",
+  "invalid-name",
+  "protected",
+  "not-installed",
+  "not-a-bundle",
+  "invalid-spec",
+  "registry-unreadable",
+  "registry-invalid",
+  "already-installed",
+  "not-removable",
+  "not-in-dependencies",
+  "invalid-version",
+  "check-failed",
+  "disposed",
+  "busy",
+  "job-missing",
+  "spawn-failed",
+  "command-failed",
+  "request-failed",
+]);
+
+const failureFields = {
+  errorCode: failureCodeSchema.optional(),
+  errorDetail: z.string().optional(),
+};
 
 export const bundleRowSchema = z.object({
   id: z.string(),
@@ -42,6 +75,7 @@ export const pluginsSnapshotSchema = z.object({
   busy: z.boolean(),
   activeJobId: z.string().optional(),
   activeJobKind: jobKindSchema.optional(),
+  ...failureFields,
 });
 
 export const jobStatusSchema = z.object({
@@ -49,10 +83,10 @@ export const jobStatusSchema = z.object({
   kind: jobKindSchema,
   state: jobStateSchema,
   output: z.string(),
-  error: z.string().optional(),
   updates: z.record(z.string(), z.string()).optional(),
   startedAt: z.number(),
   finishedAt: z.number().optional(),
+  ...failureFields,
 });
 
 export const setEnabledInputSchema = z.object({
@@ -61,8 +95,10 @@ export const setEnabledInputSchema = z.object({
 });
 
 export const setEnabledOutputSchema = z.object({
+  ok: z.boolean(),
   changed: z.boolean(),
   enabled: z.boolean(),
+  ...failureFields,
 });
 
 export const inspectSpecInputSchema = z.object({
@@ -75,7 +111,7 @@ export const inspectSpecOutputSchema = z.object({
   version: z.string().optional(),
   description: z.string().optional(),
   client: z.boolean(),
-  error: z.string().optional(),
+  ...failureFields,
 });
 
 export const startJobInputSchema = z.discriminatedUnion("kind", [
@@ -86,7 +122,9 @@ export const startJobInputSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const startJobOutputSchema = z.object({
-  id: z.string(),
+  ok: z.boolean(),
+  id: z.string().optional(),
+  ...failureFields,
 });
 
 export const jobIdInputSchema = z.object({
@@ -95,6 +133,7 @@ export const jobIdInputSchema = z.object({
 
 export type JobKind = z.infer<typeof jobKindSchema>;
 export type JobState = z.infer<typeof jobStateSchema>;
+export type FailureCode = z.infer<typeof failureCodeSchema>;
 export type BundleRow = z.infer<typeof bundleRowSchema>;
 export type BundleInfo = z.infer<typeof bundleInfoSchema>;
 export type PluginsSnapshot = z.infer<typeof pluginsSnapshotSchema>;
@@ -103,6 +142,7 @@ export type SetEnabledInput = z.infer<typeof setEnabledInputSchema>;
 export type SetEnabledOutput = z.infer<typeof setEnabledOutputSchema>;
 export type InspectSpecOutput = z.infer<typeof inspectSpecOutputSchema>;
 export type StartJobInput = z.infer<typeof startJobInputSchema>;
+export type StartJobOutput = z.infer<typeof startJobOutputSchema>;
 
 export const listRpc = defineRpc({
   name: "dsh-plugins.list",

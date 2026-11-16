@@ -119,5 +119,90 @@
         "hint": "The height the command block keeps even in a very small window, in pixels. Range 60 to 360."
       }
     }
+  },
+  "plugins": {
+    "header": {
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "checkUpdates": "Check for updates",
+      "checkingUpdates": "Checking…",
+      "notice": "Changes apply to new sessions; running sessions keep their current state.",
+      "retry": "Retry",
+      "profile": "{{profile}} · {{host}}"
+    },
+    "groups": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "dependencies": "Plain dependencies"
+    },
+    "badges": {
+      "official": "Built in",
+      "protected": "Protected",
+      "client": "Web UI",
+      "platformUnsupported": "Not supported here",
+      "missing": "Missing",
+      "updateAvailable": "Update to {{version}}"
+    },
+    "bundle": {
+      "dependencyNote": "This is a plain dependency, not a DSH bundle; it does not become a profile layer.",
+      "clientNote": "Its UI only appears in DSH Web/Desktop.",
+      "platforms": "Supported platforms: {{platforms}}",
+      "remove": "Remove",
+      "confirmRemove": "Confirm removal",
+      "cancel": "Cancel",
+      "update": "Update to {{version}}",
+      "confirmUpdate": "Confirm update to {{version}}"
+    },
+    "install": {
+      "title": "Install a DSH plugin",
+      "hint": "Only npm registry package names are accepted. The package is checked for dsh.bundle before installation.",
+      "placeholder": "Package name or name@version",
+      "check": "Check",
+      "checking": "Checking…",
+      "confirm": "Install",
+      "unknown": "Unknown package",
+      "trust": "This is third-party code. It runs inside every new DSH session. Install only packages you trust.",
+      "notBundle": "This package does not declare dsh.bundle, so it would not take effect in this profile."
+    },
+    "job": {
+      "installAction": "Installation",
+      "removeAction": "Removal",
+      "updateAction": "Update",
+      "checkAction": "Update check",
+      "running": "{{action}} in progress…",
+      "failed": "{{action}} failed",
+      "succeeded": "{{action}} finished",
+      "failedBadge": "Failed",
+      "doneBadge": "Done",
+      "updatesFound_one": "{{count}} update available.",
+      "updatesFound_other": "{{count}} updates available."
+    },
+    "status": {
+      "loadingProfile": "Reading the profile…"
+    },
+    "errors": {
+      "profile-unreadable": "Could not read the profile's package.json.",
+      "profile-invalid": "The profile's package.json is not valid JSON.",
+      "invalid-platform": "This bundle does not support the current platform.",
+      "lock-timeout": "Timed out waiting for the profile write lock.",
+      "invalid-name": "The bundle name is empty.",
+      "protected": "This bundle is protected.",
+      "not-installed": "This package is not installed.",
+      "not-a-bundle": "This package does not declare dsh.bundle.",
+      "invalid-spec": "Only npm registry package names are supported.",
+      "registry-unreadable": "Could not read the registry response.",
+      "registry-invalid": "The registry returned no usable package information.",
+      "already-installed": "This package is already installed. Enable it in the list instead.",
+      "not-removable": "Only packages in the profile dependencies can be removed.",
+      "not-in-dependencies": "This package is not a profile dependency.",
+      "invalid-version": "This is not a valid registry version.",
+      "check-failed": "Some bundles could not be checked.",
+      "disposed": "The plugin was unloaded.",
+      "busy": "Another management task is running.",
+      "job-missing": "The task is no longer available.",
+      "spawn-failed": "Could not start dsh.",
+      "command-failed": "The dsh command failed.",
+      "request-failed": "The request failed."
+    }
   }
 }

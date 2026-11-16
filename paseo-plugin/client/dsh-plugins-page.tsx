@@ -9,7 +9,8 @@ import {
   View,
 } from "react-native";
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useRpc } from "@getpaseo/plugin/client";
+import { useRpc, useTranslation } from "@getpaseo/plugin/client";
+import { messages } from "./messages";
 import {
   inspectSpecRpc,
   jobStatusRpc,
@@ -17,6 +18,7 @@ import {
   setEnabledRpc,
   startJobRpc,
   type BundleInfo,
+  type FailureCode,
   type InspectSpecOutput,
   type JobStatus,
   type PluginsSnapshot,
@@ -26,8 +28,84 @@ import {
 type ThemeColors = PluginSurfaceProps["theme"]["colors"];
 type Styles = ReturnType<typeof createStyles>;
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+// The catalog is known at build time; helpers only pass keys from it.
+type Translate = (key: string, args?: Record<string, unknown>) => string;
+
+interface UiFailure {
+  code: FailureCode;
+  detail?: string;
+}
+
+const FAILURE_CODES = new Set<string>([
+  "profile-unreadable",
+  "profile-invalid",
+  "invalid-platform",
+  "lock-timeout",
+  "invalid-name",
+  "protected",
+  "not-installed",
+  "not-a-bundle",
+  "invalid-spec",
+  "registry-unreadable",
+  "registry-invalid",
+  "already-installed",
+  "not-removable",
+  "not-in-dependencies",
+  "invalid-version",
+  "check-failed",
+  "disposed",
+  "busy",
+  "job-missing",
+  "spawn-failed",
+  "command-failed",
+  "request-failed",
+]);
+
+function failureOf(error: unknown): UiFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    code: FAILURE_CODES.has(message) ? message as FailureCode : "request-failed",
+    ...(message === "" ? {} : { detail: message }),
+  };
+}
+
+const FAILURE_KEYS: Record<FailureCode, string> = {
+  "profile-unreadable": "plugins.errors.profile-unreadable",
+  "profile-invalid": "plugins.errors.profile-invalid",
+  "invalid-platform": "plugins.errors.invalid-platform",
+  "lock-timeout": "plugins.errors.lock-timeout",
+  "invalid-name": "plugins.errors.invalid-name",
+  "protected": "plugins.errors.protected",
+  "not-installed": "plugins.errors.not-installed",
+  "not-a-bundle": "plugins.errors.not-a-bundle",
+  "invalid-spec": "plugins.errors.invalid-spec",
+  "registry-unreadable": "plugins.errors.registry-unreadable",
+  "registry-invalid": "plugins.errors.registry-invalid",
+  "already-installed": "plugins.errors.already-installed",
+  "not-removable": "plugins.errors.not-removable",
+  "not-in-dependencies": "plugins.errors.not-in-dependencies",
+  "invalid-version": "plugins.errors.invalid-version",
+  "check-failed": "plugins.errors.check-failed",
+  "disposed": "plugins.errors.disposed",
+  "busy": "plugins.errors.busy",
+  "job-missing": "plugins.errors.job-missing",
+  "spawn-failed": "plugins.errors.spawn-failed",
+  "command-failed": "plugins.errors.command-failed",
+  "request-failed": "plugins.errors.request-failed",
+};
+
+function failureText(t: Translate, failure: UiFailure): string {
+  const base = t(FAILURE_KEYS[failure.code]);
+  if (
+    failure.detail !== undefined
+    && (failure.code === "command-failed"
+      || failure.code === "check-failed"
+      || failure.code === "invalid-platform"
+      || failure.code === "request-failed")
+  ) {
+    return `${base}\n${failure.detail}`;
+  }
+  return base;
 }
 
 function tailLines(text: string, count: number): string {
@@ -36,17 +114,17 @@ function tailLines(text: string, count: number): string {
   return lines.slice(-count).join("\n");
 }
 
-function jobTitle(job: JobStatus): string {
+function jobTitle(job: JobStatus, t: Translate): string {
   const action = job.kind === "install"
-    ? "安装"
+    ? t("plugins.job.installAction")
     : job.kind === "remove"
-      ? "卸载"
+      ? t("plugins.job.removeAction")
       : job.kind === "update"
-        ? "更新"
-        : "检查更新";
-  if (job.state === "running") return `正在${action}…`;
-  if (job.state === "failed") return `${action}失败`;
-  return `${action}完成`;
+        ? t("plugins.job.updateAction")
+        : t("plugins.job.checkAction");
+  if (job.state === "running") return t("plugins.job.running", { action });
+  if (job.state === "failed") return t("plugins.job.failed", { action });
+  return t("plugins.job.succeeded", { action });
 }
 
 function createStyles(colors: ThemeColors, compact: boolean) {
@@ -272,6 +350,7 @@ function Badge({
 
 function BundleRow({
   bundle,
+  t,
   styles,
   busy,
   toggleBusy,
@@ -282,6 +361,7 @@ function BundleRow({
   onUpdate,
 }: {
   bundle: BundleInfo;
+  t: Translate;
   styles: Styles;
   busy: boolean;
   toggleBusy: string | null;
@@ -302,14 +382,14 @@ function BundleRow({
       <View style={styles.rowTop}>
         <Text style={styles.name}>{bundle.name}</Text>
         {bundle.version === undefined ? null : <Text style={styles.version}>{bundle.version}</Text>}
-        {bundle.official ? <Badge label="内置" styles={styles} /> : null}
-        {bundle.protected ? <Badge label="受保护" styles={styles} /> : null}
-        {bundle.client ? <Badge label="客户端界面" tone="warn" styles={styles} /> : null}
-        {bundle.platformSupported ? null : <Badge label="当前平台不支持" tone="danger" styles={styles} />}
-        {bundle.installed ? null : <Badge label="缺失" tone="danger" styles={styles} />}
+        {bundle.official ? <Badge label={t("plugins.badges.official")} styles={styles} /> : null}
+        {bundle.protected ? <Badge label={t("plugins.badges.protected")} styles={styles} /> : null}
+        {bundle.client ? <Badge label={t("plugins.badges.client")} tone="warn" styles={styles} /> : null}
+        {bundle.platformSupported ? null : <Badge label={t("plugins.badges.platformUnsupported")} tone="danger" styles={styles} />}
+        {bundle.installed ? null : <Badge label={t("plugins.badges.missing")} tone="danger" styles={styles} />}
         {bundle.update === undefined
           ? null
-          : <Badge label={`可更新到 ${bundle.update}`} tone="warn" styles={styles} />}
+          : <Badge label={t("plugins.badges.updateAvailable", { version: bundle.update })} tone="warn" styles={styles} />}
       </View>
 
       {bundle.description === undefined || bundle.description === ""
@@ -317,14 +397,14 @@ function BundleRow({
         : <Text style={styles.description}>{bundle.description}</Text>}
 
       {isDependency
-        ? <Text style={styles.muted}>普通依赖，不是 DSH bundle，不会成为 profile 层。</Text>
+        ? <Text style={styles.muted}>{t("plugins.bundle.dependencyNote")}</Text>
         : null}
       {bundle.client
-        ? <Text style={styles.muted}>界面只在 DSH Web/Desktop 显示。</Text>
+        ? <Text style={styles.muted}>{t("plugins.bundle.clientNote")}</Text>
         : null}
-      {bundle.platformSupported || bundle.platformReason === undefined
+      {bundle.platformSupported || bundle.platformReason === undefined || bundle.platformReason === ""
         ? null
-        : <Text style={styles.muted}>{bundle.platformReason}</Text>}
+        : <Text style={styles.muted}>{t("plugins.bundle.platforms", { platforms: bundle.platformReason })}</Text>}
 
       {bundle.rows.length === 0 ? null : (
         <View style={styles.rowTags}>
@@ -351,16 +431,16 @@ function BundleRow({
           removePending ? (
             <>
               <ActionButton
-                label="确认卸载"
+                label={t("plugins.bundle.confirmRemove")}
                 disabled={rowBusy}
                 onPress={() => onRemove(bundle.name)}
                 styles={styles}
               />
-              <ActionButton label="取消" disabled={rowBusy} onPress={() => onRemove("")} styles={styles} />
+              <ActionButton label={t("plugins.bundle.cancel")} disabled={rowBusy} onPress={() => onRemove("")} styles={styles} />
             </>
           ) : (
             <ActionButton
-              label="卸载"
+              label={t("plugins.bundle.remove")}
               disabled={rowBusy}
               onPress={() => onRemove(bundle.name)}
               styles={styles}
@@ -371,17 +451,17 @@ function BundleRow({
         {bundle.update === undefined ? null : updatePending ? (
           <>
             <ActionButton
-              label={`确认更新到 ${bundle.update}`}
+              label={t("plugins.bundle.confirmUpdate", { version: bundle.update })}
               disabled={rowBusy}
               primary
               onPress={() => onUpdate(bundle.name, bundle.update as string)}
               styles={styles}
             />
-            <ActionButton label="取消" disabled={rowBusy} onPress={() => onUpdate("", "")} styles={styles} />
+            <ActionButton label={t("plugins.bundle.cancel")} disabled={rowBusy} onPress={() => onUpdate("", "")} styles={styles} />
           </>
         ) : (
           <ActionButton
-            label={`更新到 ${bundle.update}`}
+            label={t("plugins.bundle.update", { version: bundle.update })}
             disabled={rowBusy}
             onPress={() => onUpdate(bundle.name, bundle.update as string)}
             styles={styles}
@@ -394,6 +474,8 @@ function BundleRow({
 
 export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
   const compact = layout.compact || layout.platform === "ios" || layout.platform === "android";
+  const { t } = useTranslation(messages);
+  const translate = t as unknown as Translate;
   const styles = useMemo(() => createStyles(theme.colors, compact), [theme.colors, compact]);
 
   const list = useRpc(listRpc);
@@ -403,10 +485,10 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
   const jobStatus = useRpc(jobStatusRpc);
 
   const [snapshot, setSnapshot] = useState<PluginsSnapshot | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<UiFailure | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [job, setJob] = useState<JobStatus | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<UiFailure | null>(null);
   const [spec, setSpec] = useState("");
   const [inspection, setInspection] = useState<InspectSpecOutput | null>(null);
   const [inspecting, setInspecting] = useState(false);
@@ -419,7 +501,12 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
     try {
       const next = await list({});
       setSnapshot(next);
-      setLoadError(null);
+      setLoadError(next.errorCode === undefined
+        ? null
+        : {
+          code: next.errorCode,
+          ...(next.errorDetail === undefined ? {} : { detail: next.errorDetail }),
+        });
       setJob((current) => {
         if (next.activeJobId === undefined) return current;
         if (current !== null && current.id === next.activeJobId) return current;
@@ -432,7 +519,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
         };
       });
     } catch (error) {
-      setLoadError(messageOf(error));
+      setLoadError(failureOf(error));
     } finally {
       setRefreshing(false);
     }
@@ -455,11 +542,17 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
         if (next.state !== "running") await refresh();
       } catch (error) {
         if (cancelled) return;
-        const message = messageOf(error);
-        setActionError(message);
+        const failure = failureOf(error);
+        setActionError(failure);
         setJob((current) => current === null
           ? current
-          : { ...current, state: "failed", error: message, finishedAt: Date.now() });
+          : {
+            ...current,
+            state: "failed",
+            errorCode: failure.code,
+            errorDetail: failure.detail,
+            finishedAt: Date.now(),
+          });
       }
     };
 
@@ -487,6 +580,13 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
     setActionError(null);
     try {
       const started = await startJob(input);
+      if (!started.ok || started.id === undefined) {
+        setActionError({
+          code: started.errorCode ?? "command-failed",
+          ...(started.errorDetail === undefined ? {} : { detail: started.errorDetail }),
+        });
+        return false;
+      }
       setJob({
         id: started.id,
         kind: input.kind,
@@ -504,7 +604,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
         });
       return true;
     } catch (error) {
-      setActionError(messageOf(error));
+      setActionError(failureOf(error));
       return false;
     }
   }, [startJob]);
@@ -518,7 +618,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
     try {
       setInspection(await inspectSpec({ spec: value }));
     } catch (error) {
-      setActionError(messageOf(error));
+      setActionError(failureOf(error));
     } finally {
       setInspecting(false);
     }
@@ -534,10 +634,17 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
     setToggleBusy(bundle.name);
     setActionError(null);
     try {
-      await setEnabled({ name: bundle.name, enabled: !bundle.enabled });
+      const result = await setEnabled({ name: bundle.name, enabled: !bundle.enabled });
+      if (!result.ok) {
+        setActionError({
+          code: result.errorCode ?? "command-failed",
+          ...(result.errorDetail === undefined ? {} : { detail: result.errorDetail }),
+        });
+        return;
+      }
       await refresh();
     } catch (error) {
-      setActionError(messageOf(error));
+      setActionError(failureOf(error));
     } finally {
       setToggleBusy(null);
     }
@@ -570,11 +677,14 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
   };
 
   const bundles = snapshot?.bundles ?? [];
-  const groups = [
-    { title: "已启用", items: bundles.filter((bundle) => bundle.enabled && bundle.kind !== "dependency") },
-    { title: "未启用", items: bundles.filter((bundle) => !bundle.enabled && bundle.kind !== "dependency") },
-    { title: "普通依赖", items: bundles.filter((bundle) => bundle.kind === "dependency") },
-  ].filter((group) => group.items.length > 0);
+  const groups = ([
+    { title: "plugins.groups.enabled", items: bundles.filter((bundle) => bundle.enabled && bundle.kind !== "dependency") },
+    { title: "plugins.groups.disabled", items: bundles.filter((bundle) => !bundle.enabled && bundle.kind !== "dependency") },
+    { title: "plugins.groups.dependencies", items: bundles.filter((bundle) => bundle.kind === "dependency") },
+  ] as Array<{
+    title: "plugins.groups.enabled" | "plugins.groups.disabled" | "plugins.groups.dependencies";
+    items: BundleInfo[];
+  }>).filter((group) => group.items.length > 0);
 
   return (
     <ScrollView
@@ -584,14 +694,16 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={styles.muted}>
-            {snapshot === null ? host.label : `${snapshot.profile} · ${host.label}`}
+            {snapshot === null
+              ? host.label
+              : t("plugins.header.profile", { profile: snapshot.profile, host: host.label })}
           </Text>
           {snapshot === null ? null : <Text style={styles.path}>{snapshot.displayDir}</Text>}
-          <Text style={styles.notice}>改动只影响新建会话；正在运行的会话保持原样。</Text>
+          <Text style={styles.notice}>{t("plugins.header.notice")}</Text>
         </View>
         <View style={styles.headerActions}>
           <ActionButton
-            label={refreshing ? "刷新中…" : "刷新"}
+            label={refreshing ? t("plugins.header.refreshing") : t("plugins.header.refresh")}
             disabled={refreshing}
             onPress={() => {
               void refresh();
@@ -599,7 +711,9 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
             styles={styles}
           />
           <ActionButton
-            label={job?.kind === "check" && job.state === "running" ? "检查中…" : "检查更新"}
+            label={job?.kind === "check" && job.state === "running"
+              ? t("plugins.header.checkingUpdates")
+              : t("plugins.header.checkUpdates")}
             disabled={busy}
             onPress={() => {
               void beginJob({ kind: "check" });
@@ -611,9 +725,9 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
 
       {loadError === null ? null : (
         <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{loadError}</Text>
+          <Text style={styles.errorText}>{failureText(translate, loadError)}</Text>
           <ActionButton
-            label="重试"
+            label={t("plugins.header.retry")}
             onPress={() => {
               void refresh();
             }}
@@ -624,7 +738,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
 
       {actionError === null ? null : (
         <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{actionError}</Text>
+          <Text style={styles.errorText}>{failureText(translate, actionError)}</Text>
         </View>
       )}
 
@@ -634,13 +748,24 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
             {job.state === "running" ? (
               <ActivityIndicator size="small" color={theme.colors.accent} />
             ) : null}
-            <Text style={styles.name}>{jobTitle(job)}</Text>
-            {job.state === "failed" ? <Badge label="失败" tone="danger" styles={styles} /> : null}
-            {job.state === "succeeded" ? <Badge label="完成" tone="success" styles={styles} /> : null}
+            <Text style={styles.name}>{jobTitle(job, translate)}</Text>
+            {job.state === "failed" ? <Badge label={t("plugins.job.failedBadge")} tone="danger" styles={styles} /> : null}
+            {job.state === "succeeded" ? <Badge label={t("plugins.job.doneBadge")} tone="success" styles={styles} /> : null}
           </View>
-          {job.error === undefined ? null : <Text style={styles.errorText}>{job.error}</Text>}
+          {job.errorCode === undefined
+            ? null
+            : (
+              <Text style={styles.errorText}>
+                {failureText(translate, {
+                  code: job.errorCode,
+                  ...(job.errorDetail === undefined ? {} : { detail: job.errorDetail }),
+                })}
+              </Text>
+            )}
           {job.kind === "check" && job.updates !== undefined && Object.keys(job.updates).length > 0 ? (
-            <Text style={styles.muted}>发现 {Object.keys(job.updates).length} 个可更新项。</Text>
+            <Text style={styles.muted}>
+              {t("plugins.job.updatesFound", { count: Object.keys(job.updates).length })}
+            </Text>
           ) : null}
           {job.output === "" ? null : (
             <Text style={styles.output}>{tailLines(job.output, 12)}</Text>
@@ -649,17 +774,15 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
       )}
 
       <View style={styles.card}>
-        <Text style={styles.groupTitle}>安装 DSH 插件</Text>
-        <Text style={styles.muted}>
-          只接受 npm registry 包名。安装前会检查它是否声明 dsh.bundle。
-        </Text>
+        <Text style={styles.groupTitle}>{t("plugins.install.title")}</Text>
+        <Text style={styles.muted}>{t("plugins.install.hint")}</Text>
         <TextInput
           value={spec}
           onChangeText={(value: string) => {
             setSpec(value);
             setInspection(null);
           }}
-          placeholder="包名或包名@版本"
+          placeholder={t("plugins.install.placeholder")}
           placeholderTextColor={theme.colors.foregroundMuted}
           editable={!busy && !inspecting && !(inspection?.ok === true)}
           autoCapitalize="none"
@@ -668,7 +791,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
         />
         <View style={styles.rowActions}>
           <ActionButton
-            label={inspecting ? "检查中…" : "检查"}
+            label={inspecting ? t("plugins.install.checking") : t("plugins.install.check")}
             disabled={busy || inspecting || spec.trim() === ""}
             onPress={() => {
               void inspect();
@@ -677,7 +800,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
           />
           {inspection === null ? null : (
             <ActionButton
-              label="取消"
+              label={t("plugins.bundle.cancel")}
               disabled={busy || inspecting}
               onPress={() => {
                 setInspection(null);
@@ -690,21 +813,19 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
         {inspection === null ? null : inspection.ok ? (
           <View style={styles.infoBox}>
             <Text style={styles.name}>
-              {inspection.name ?? "未知包"}
+              {inspection.name ?? t("plugins.install.unknown")}
               {inspection.version === undefined ? "" : ` ${inspection.version}`}
             </Text>
             {inspection.description === undefined || inspection.description === ""
               ? null
               : <Text style={styles.description}>{inspection.description}</Text>}
             {inspection.client
-              ? <Text style={styles.muted}>界面只在 DSH Web/Desktop 显示。</Text>
+              ? <Text style={styles.muted}>{t("plugins.bundle.clientNote")}</Text>
               : null}
-            <Text style={styles.muted}>
-              这是第三方代码，会在每个新会话的 DSH 进程里运行。只安装你信任的包。
-            </Text>
+            <Text style={styles.muted}>{t("plugins.install.trust")}</Text>
             <View style={styles.rowActions}>
               <ActionButton
-                label="确认安装"
+                label={t("plugins.install.confirm")}
                 primary
                 disabled={busy}
                 onPress={() => {
@@ -713,7 +834,7 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
                 styles={styles}
               />
               <ActionButton
-                label="取消"
+                label={t("plugins.bundle.cancel")}
                 disabled={busy}
                 onPress={() => {
                   setInspection(null);
@@ -724,7 +845,14 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
           </View>
         ) : (
           <View style={styles.infoBox}>
-            <Text style={styles.errorText}>{inspection.error ?? "无法安装这个包。"}</Text>
+            <Text style={styles.errorText}>
+              {inspection.errorCode === "not-a-bundle"
+                ? t("plugins.install.notBundle")
+                : failureText(translate, {
+                  code: inspection.errorCode ?? "command-failed",
+                  ...(inspection.errorDetail === undefined ? {} : { detail: inspection.errorDetail }),
+                })}
+            </Text>
           </View>
         )}
       </View>
@@ -732,17 +860,20 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
       {snapshot === null && loadError === null ? (
         <View style={styles.statusCard}>
           <ActivityIndicator size="small" color={theme.colors.accent} />
-          <Text style={styles.muted}>正在读取 profile…</Text>
+          <Text style={styles.muted}>{t("plugins.status.loadingProfile")}</Text>
         </View>
       ) : null}
 
       {groups.map((group) => (
         <View key={group.title} style={styles.section}>
-          <Text style={styles.groupTitle}>{group.title} · {group.items.length}</Text>
+          <Text style={styles.groupTitle}>
+            {t(group.title as "plugins.groups.enabled")} · {group.items.length}
+          </Text>
           {group.items.map((bundle) => (
             <BundleRow
               key={bundle.name}
               bundle={bundle}
+              t={translate}
               styles={styles}
               busy={busy}
               toggleBusy={toggleBusy}
