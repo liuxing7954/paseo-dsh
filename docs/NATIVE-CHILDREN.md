@@ -54,6 +54,6 @@ then close only that child and verify another root turn. These checks need a
 configured model and spend tokens. Use disposable profiles rather than editing
 the user's profile files.
 
-This branch does not mount or forward launch MCP servers. Test native routing
-with a statically configured profile; launch-injected MCP inheritance belongs to
-the separate launch-context change.
+Launch MCP servers, the system prompt and the tool policy come from the launch
+context already on main (#15), and native children inherit them through
+`composeFrom()`. This change routes the children without touching that path.

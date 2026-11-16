@@ -32,7 +32,7 @@ this provider/bridge contract.
 
 `paseo-plugin/test/subsessions.test.cjs` covers root/child admission, refused
 steers without duplicate rows, equal-body message identity, permission-owner
-isolation, and turn-ID uniqueness. `test/launch.test.cjs` exercises the real
+isolation, and turn-ID uniqueness. `test/child-bridge.test.cjs` exercises the real
 bridge methods against controlled idle/running agents. Before installation,
 also check assistant-stream continuity and host projection, regenerate bridge
 assets, run the full plugin suite and `harness/plugin-check.cjs`, and validate

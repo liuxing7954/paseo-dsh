@@ -233,7 +233,7 @@ export class TimelineBuilder {
     return this.#put({
       type: "tool_call", id: `tool:${callId}`, callId, name,
       status: previous?.type === "tool_call" ? previous.status : "running", error: null,
-      detail: { type: "sub_agent", subAgentType: "Sub-agent", log: detail?.log ?? "",
+      detail: { type: "sub_agent", subAgentType: "Sub-agent / 子代理", log: detail?.log ?? "",
         ...(description === undefined ? {} : { description }),
         ...(childSessionId === undefined ? {} : { childSessionId }),
       },
