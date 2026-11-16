@@ -1,3 +1,4 @@
+import type { ProviderMcpServerConfig, ProviderToolPolicy } from "@getpaseo/plugin/server/provider";
 /**
  * One `dsh --profile paseo` child process, speaking the bridge's stdio JSON-RPC.
  *
@@ -15,7 +16,7 @@ import { resolveDshCommand } from "./dsh-command.mjs";
 export interface DshRoute {
   provider: string;
   model: string;
-  reasoningEffort?: string;
+  reasoningEffort?: string | null;
 }
 
 /** One question the model asked, mirroring DSH's `AskUserQuestionItem`. */
@@ -151,6 +152,9 @@ export interface DshProcessOptions extends DshProcessHandlers {
   preset?: string;
   /** Extra environment for the child; merged over the daemon's environment. */
   env?: Record<string, string>;
+  mcpServers?: Readonly<Record<string, ProviderMcpServerConfig>>;
+  systemPrompt?: string;
+  toolPolicy?: ProviderToolPolicy;
   /**
    * Whether `start()` pins a route with `initialize`. Catalog reads skip it,
    * because `paseo/catalog` needs no agent and a bad route must not hide the
@@ -244,6 +248,10 @@ export class DshProcess {
     }
 
     await this.#request("initialize", {
+      sessionId: this.#options.sessionId,
+      mcpServers: this.#options.mcpServers ?? {},
+      ...(this.#options.systemPrompt === undefined ? {} : { systemPrompt: this.#options.systemPrompt }),
+      ...(this.#options.toolPolicy === undefined ? {} : { toolPolicy: this.#options.toolPolicy }),
       cwd: this.#options.cwd,
       provider: this.#options.route.provider,
       model: this.#options.route.model,

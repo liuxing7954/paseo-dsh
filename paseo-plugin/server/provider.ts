@@ -20,7 +20,7 @@ import {
   type ProviderThinkingOption,
 } from "@getpaseo/plugin/server/provider";
 import { DshProcess, type DshCatalog } from "./dsh-process";
-import { DshSession, MODES, parseRoute } from "./session";
+import { DshSession, MODES, offersThinking, parseRoute } from "./session";
 
 const CAPABILITIES = [
   "prompt.message",
@@ -55,6 +55,7 @@ const CAPABILITIES = [
   // only reproduce conversation state.
   "session.revert.conversation",
   "permission",
+  "permission.tool_policy",
 ] as const;
 
 /** Provider id registered with Paseo; distinct from the ACP `deepseek-harness` entry. */
@@ -348,6 +349,14 @@ class DshConnection implements ProviderConnection {
     const { sessionId, config } = input;
     const display = this.#display ?? (await loadCatalog(config.cwd));
     this.#display = display;
+    const route = { ...parseRoute(config.model, display.fallbackRoute) };
+    // Only an option the model offers reaches initialize; configure() below
+    // drops any other with a log, as it does for live changes.
+    if (config.thinkingOption === null || config.thinkingOption === "") {
+      route.reasoningEffort = null;
+    } else if (config.thinkingOption !== undefined && offersThinking(display.models, route, config.thinkingOption)) {
+      route.reasoningEffort = config.thinkingOption;
+    }
 
     // DSH's session id: the Paseo-minted one normally, but the native id when
     // Paseo reopens an imported session under a fresh agent id.
@@ -355,7 +364,6 @@ class DshConnection implements ProviderConnection {
     const dshSessionId =
       isRecord(nativeId) && typeof nativeId["sessionId"] === "string" ? nativeId["sessionId"] : sessionId;
 
-    const route = parseRoute(config.model, display.fallbackRoute);
     const settings = config.settings ?? {};
     // Carry the preset into `open()` so the process can queue it before the agent
     // exists: that is what puts the right id in the session header, instead of
@@ -367,6 +375,9 @@ class DshConnection implements ProviderConnection {
       dshSessionId,
       cwd: config.cwd,
       env: config.env ?? {},
+      mcpServers: config.mcpServers,
+      ...(config.systemPrompt === undefined ? {} : { systemPrompt: config.systemPrompt }),
+      ...(config.toolPolicy === undefined ? {} : { toolPolicy: config.toolPolicy }),
       route,
       mode: config.mode ?? "build",
       ...(initialPreset === undefined ? {} : { initialPreset }),
@@ -380,12 +391,22 @@ class DshConnection implements ProviderConnection {
     });
     this.#sessions.set(sessionId, session);
 
-    await session.open();
-
-    if (config.thinkingOption !== undefined) {
-      await session.configure({ thinkingOption: config.thinkingOption });
+    try {
+      await session.open();
+      // Fresh agents receive the choice at initialize. A resumed agent owns a
+      // durable selection, so apply only the caller's explicit overrides.
+      if (config.model !== undefined || config.thinkingOption !== undefined) {
+        await session.configure({
+          ...(config.model === undefined ? {} : { model: config.model }),
+          ...(config.thinkingOption === undefined ? {} : { thinkingOption: config.thinkingOption }),
+        });
+      }
     }
-
+    catch (error) {
+      this.#sessions.delete(sessionId);
+      await session.close();
+      throw error;
+    }
     // The preset already reached the process before `initialize` (see
     // `initialPreset` above), so this only covers a choice that lands later — a
     // resumed session or a pick made while the session was still opening. The
@@ -407,8 +428,7 @@ class DshConnection implements ProviderConnection {
       await session.loadCommands();
       await session.loadPermission();
       await session.loadPresets();
-      // The agent exists now (loadCommands created it under the preset chosen
-      // above), so measuring occupancy cannot race the preset any more.
+      // initialize validated the composed agent before these independent reads.
       void session.refreshUsage();
     } catch (error) {
       process.stderr.write(`[${PROVIDER_ID}] command catalog failed: ${messageOf(error)}\n`);

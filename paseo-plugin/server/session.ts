@@ -21,6 +21,8 @@ import type {
   ProviderTimelineItem,
   ProviderToolCallDetail,
   ProviderUsage,
+  ProviderMcpServerConfig,
+  ProviderToolPolicy,
 } from "@getpaseo/plugin/server/provider";
 import type { JsonValue } from "./json-value";
 import {
@@ -56,6 +58,9 @@ export interface DshSessionOptions {
   dshSessionId?: string;
   cwd: string;
   env: Record<string, string>;
+  mcpServers?: Readonly<Record<string, ProviderMcpServerConfig>>;
+  systemPrompt?: string;
+  toolPolicy?: ProviderToolPolicy;
   route: DshRoute;
   mode: string;
   /**
@@ -113,6 +118,12 @@ export function parseRoute(model: string | undefined, fallback: DshRoute): DshRo
   const slash = model.indexOf("/");
   if (slash <= 0) return { ...fallback, model };
   return { provider: model.slice(0, slash), model: model.slice(slash + 1) };
+}
+
+/** Whether the catalog offers `option` as a thinking choice for the route's model. */
+export function offersThinking(models: readonly ProviderModel[], route: DshRoute, option: string): boolean {
+  const id = `${route.provider}/${route.model}`;
+  return models.find((entry) => entry.id === id)?.thinkingOptions?.some((entry) => entry.id === option) ?? false;
 }
 
 /** One DSH subagent child session observed through the bridge. */
@@ -245,7 +256,7 @@ export class DshSession {
     this.#options = options;
     this.#route = options.route;
     this.#mode = options.mode === "plan" ? "plan" : "build";
-    this.#thinkingOption = options.route.reasoningEffort;
+    this.#thinkingOption = options.route.reasoningEffort ?? undefined;
   }
 
   /** Spawn the process, pin the route, and reconcile the requested mode. */
@@ -256,6 +267,9 @@ export class DshSession {
       sessionId: this.#dshSessionId,
       ...(this.#options.initialPreset === undefined ? {} : { preset: this.#options.initialPreset }),
       env: this.#options.env,
+      mcpServers: this.#options.mcpServers,
+      systemPrompt: this.#options.systemPrompt,
+      toolPolicy: this.#options.toolPolicy,
       onEvent: (payload) => this.#onSessionEvent(payload),
       onAssistantStream: (frame) => this.#onAssistantStream(frame),
       onStatus: (payload) => this.#onStatus(payload),
@@ -278,6 +292,7 @@ export class DshSession {
     });
     this.#process = process;
     await process.start();
+    this.#applyModelSelection(await process.setConfig({}));
     if (this.#mode === "plan") {
       await process.setPlan(true);
     }
@@ -341,11 +356,6 @@ export class DshSession {
   #thinking(): ProviderThinkingOption[] {
     const id = `${this.#route.provider}/${this.#route.model}`;
     return this.#options.models.find((entry) => entry.id === id)?.thinkingOptions ?? [];
-  }
-
-  /** Thinking-effort ids the current model actually declares; empty means none. */
-  #supportedEfforts(): string[] {
-    return this.#thinking().map((option) => option.id);
   }
 
   /**
@@ -738,52 +748,31 @@ export class DshSession {
   /** Apply a composer change: model, mode, thinking option or settings. */
   async configure(changes: ProviderConfigChanges): Promise<void> {
     const process = this.#require();
-    // A route change invalidates any occupancy poll still in flight: its answer
-    // describes the previous model's capacity and must not overwrite the new
-    // one's. `refreshUsage` below issues the replacement poll.
-    if (changes.model !== undefined && changes.model !== null) {
-      this.#usageGeneration += 1;
-      this.#emitUsage({}, true);
-    }
-
-    if (changes.model !== undefined && changes.model !== null) {
-      const next = parseRoute(changes.model, this.#route);
+    if ((changes.model !== undefined && changes.model !== null) || changes.thinkingOption !== undefined) {
+      const next = changes.model == null ? this.#route : parseRoute(changes.model, this.#route);
+      const switched = next.provider !== this.#route.provider || next.model !== this.#route.model;
+      let effort = changes.thinkingOption === undefined
+        ? switched ? undefined : this.#thinkingOption
+        : changes.thinkingOption === null || changes.thinkingOption === "" ? undefined : changes.thinkingOption;
+      // The runtime rejects a whole turn when handed an effort the model does not
+      // declare, and a saved or host-default choice can name one. Serve only what
+      // this model advertises and drop anything else; the read-back reports it.
+      if (effort !== undefined && !offersThinking(this.#options.models, next, effort)) {
+        this.#options.log(`ignoring unsupported thinking option "${effort}" for ${next.provider}/${next.model}`);
+        effort = undefined;
+      }
+      // Commit model and effort together, then publish only the native result.
+      // A failed validation leaves the previous UI selection intact.
       const applied = await process.setConfig({
         provider: next.provider,
         model: next.model,
-        reasoningEffort: next.reasoningEffort ?? null,
-      });
-      this.#route = {
-        provider: applied.provider,
-        model: applied.model,
-        ...(applied.reasoningEffort === null ? {} : { reasoningEffort: applied.reasoningEffort }),
-      };
-    }
-
-    if (changes.thinkingOption !== undefined) {
-      const requested =
-        changes.thinkingOption === null || changes.thinkingOption === "" ? undefined : changes.thinkingOption;
-      // The runtime rejects a whole turn when handed an effort the model does not
-      // declare, and Paseo can carry a stale selection across a model switch.
-      // Serve only what this model advertises and drop anything else.
-      const supported = this.#supportedEfforts();
-      const effort = requested !== undefined && supported.includes(requested) ? requested : undefined;
-      if (requested !== undefined && effort === undefined) {
-        this.#options.log(
-          `ignoring unsupported thinking option "${requested}" for ${this.#route.provider}/${this.#route.model}`,
-        );
-      }
-      this.#thinkingOption = effort;
-      const applied = await process.setConfig({
-        provider: this.#route.provider,
-        model: this.#route.model,
         reasoningEffort: effort ?? null,
       });
-      this.#route = {
-        provider: applied.provider,
-        model: applied.model,
-        ...(applied.reasoningEffort === null ? {} : { reasoningEffort: applied.reasoningEffort }),
-      };
+      this.#applyModelSelection(applied);
+      if (switched) {
+        this.#usageGeneration += 1;
+        this.#emitUsage({}, true);
+      }
     }
 
     if (changes.mode !== undefined && changes.mode !== null) {
@@ -1597,6 +1586,18 @@ export class DshSession {
       this.#pendingPermissions.set(permission.id, resolve);
       this.#options.emit({ type: "session.permission", sessionId: this.id, request: permission });
     });
+  }
+
+  #applyModelSelection(applied: { provider: string; model: string; reasoningEffort: string | null }): void {
+    if (typeof applied.provider !== "string" || typeof applied.model !== "string") {
+      throw new Error("DSH returned an incomplete model selection");
+    }
+    this.#route = {
+      provider: applied.provider,
+      model: applied.model,
+      ...(applied.reasoningEffort == null ? {} : { reasoningEffort: applied.reasoningEffort }),
+    };
+    this.#thinkingOption = applied.reasoningEffort ?? undefined;
   }
 }
 

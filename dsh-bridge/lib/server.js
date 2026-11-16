@@ -19,6 +19,7 @@ import { brandString } from '@deepseek-ai/dsh-brand';
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { admitEncodedImages } from '@deepseek-ai/dsh-attachment';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
+import { mountLaunchContext } from './launch.js';
 
 function encodedImage(block) {
   return block.type === 'image' && 'data' in block;
@@ -238,6 +239,8 @@ export class PaseoHarnessServer {
     this.model = options.model;
     this.reasoningEffort = effortOf(options.reasoningEffort);
     this.maxTokens = undefined;
+    this.configTail = Promise.resolve();
+    this.disposeLaunch = undefined;
 
     /**
      * Plan-mode intent recorded before a session's agent exists. Paseo opens a
@@ -328,6 +331,7 @@ export class PaseoHarnessServer {
 
   /** Validate the route and record the defaults applied to every created agent. */
   async initialize(params) {
+    if (this.initialized) throw new Error('paseo bridge is already initialized');
     if (params.cwd === undefined) throw new TypeError('initialize requires cwd');
     if (params.reasoningEffort !== undefined) effortOf(params.reasoningEffort);
     const cwd = resolve(params.cwd);
@@ -340,7 +344,8 @@ export class PaseoHarnessServer {
     const reasoningEffort = params.reasoningEffort !== undefined
       ? effortOf(params.reasoningEffort)
       : this.reasoningEffort
-        ?? (fallback?.reasoningEffort === undefined ? undefined : effortOf(fallback.reasoningEffort));
+        ?? (fallback?.provider === provider && fallback?.model === model
+          ? effortOf(fallback.reasoningEffort) : undefined);
 
     if (!this.hasAdapterFor(provider)) {
       const adapter = this.options.adapters?.[provider];
@@ -366,6 +371,12 @@ export class PaseoHarnessServer {
     this.model = model;
     this.reasoningEffort = reasoningEffort;
     this.maxTokens = params.maxTokens;
+    // One bridge process serves one Paseo root. Host-level contributions survive
+    // preset rebinding and child composeFrom(), while explicit tool filters hold.
+    this.disposeLaunch = await mountLaunchContext(this.ctx, { ...params, cwd });
+    // A native composition failure (including a preset shadowing a launch MCP
+    // namespace) is an open failure, not an optional command-discovery failure.
+    if (typeof params.sessionId === 'string') await this.getOrCreateSession(params.sessionId);
     this.initialized = true;
     return {
       serverInfo: { name: 'deepseek-harness-paseo-bridge', version: '0.1.0' },
@@ -476,8 +487,8 @@ export class PaseoHarnessServer {
 
     // Keep the live route and preset. A fork is a new agent, so the model
     // selection must be installed on it before its first turn.
-    const initial = { ...rec.control.selection.current };
-    const control = { selection: { current: initial, assembled: undefined }, dispose: undefined };
+    const initial = this.modelSelection(rec);
+    const control = { dispose: undefined };
     const planMode = this.ctx.get('planMode');
     let planActive = false;
     if (planMode !== undefined) {
@@ -488,7 +499,7 @@ export class PaseoHarnessServer {
       }
     }
     const installSelection = (agentCtx) => {
-      control.dispose = installModelSelection(agentCtx, control.selection);
+      control.dispose = installModelSelection(agentCtx);
     };
     const clearInbox = (agent) => {
       try {
@@ -535,6 +546,9 @@ export class PaseoHarnessServer {
       setup,
       ...(seed.length === 0 ? {} : { seed, inheritedEventCount: seed.length }),
     });
+    // The seed may contain an older recorded choice, which takes precedence
+    // over agentOptions. Retain the live route through the native model API.
+    handle.agent.model.select(initial);
 
     if (planActive && planMode !== undefined) {
       try {
@@ -597,42 +611,11 @@ export class PaseoHarnessServer {
 
   /** Mutate the per-agent route, or the default route while no agent exists yet. */
   async configSet(params) {
-    if (typeof params.preset === 'string' && params.preset !== '') {
-      await this.setPreset(params.sessionId, params.preset);
-    }
-    const rec = this.sessions.get(params.sessionId);
-    if (rec === undefined) {
-      if (typeof params.provider === 'string') this.provider = params.provider;
-      if (typeof params.model === 'string') this.model = params.model;
-      if (params.reasoningEffort !== undefined) {
-        this.reasoningEffort = effortOf(params.reasoningEffort);
-      }
-      return {
-        provider: this.provider,
-        model: this.model,
-        reasoningEffort: this.reasoningEffort ?? null,
-        preset: this.currentPreset(params.sessionId),
-      };
-    }
-    this.assertLiveAgent(rec, params.sessionId);
-    const selection = rec.control.selection;
-    const next = { ...(selection.current ?? {}) };
-    if (typeof params.provider === 'string') next.provider = params.provider;
-    if (typeof params.model === 'string') next.model = params.model;
-    if (params.reasoningEffort !== undefined) {
-      const effort = effortOf(params.reasoningEffort);
-      if (effort === undefined) delete next.reasoningEffort;
-      else next.reasoningEffort = effort;
-    }
-    if (next.provider === undefined || next.model === undefined) {
-      throw new Error('model selection requires both provider and model');
-    }
-    selection.current = next;
-    return {
-      ...next,
-      reasoningEffort: next.reasoningEffort ?? null,
-      preset: this.currentPreset(params.sessionId),
-    };
+    // Native validation is asynchronous. Preserve receive order, as DSH's ACP
+    // model control does, without letting a rejected choice wedge later ones.
+    const task = this.configTail.then(() => this.applyConfig(params));
+    this.configTail = task.then(() => {}, () => {});
+    return task;
   }
 
   /** The preset a session runs (chosen, else the stored projection, else default). */
@@ -1107,6 +1090,8 @@ export class PaseoHarnessServer {
         ? []
         : [Promise.resolve().then(() => this.llmFiber?.dispose())]),
     ]);
+    try { await this.disposeLaunch?.(); } catch (error) { failures.push(error); }
+    this.disposeLaunch = undefined;
     this.llmFiber = undefined;
     failures.push(
       ...teardown.filter((result) => result.status === 'rejected').map((result) => result.reason),
@@ -1187,16 +1172,16 @@ export class PaseoHarnessServer {
   }
 
   async createSession(sessionId) {
-    // Mirrors the ACP adapter: the durable option carries the initial route and
-    // a scoped mutable selection ref installed during setup owns later switches.
+    // Initial options seed fresh agents; the native model API owns recorded
+    // choices, subsequent changes and selections restored from durable logs.
     const initial = {
       provider: this.provider,
       model: this.model,
       ...(this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort }),
     };
-    const control = { selection: { current: initial, assembled: undefined }, dispose: undefined };
+    const control = { dispose: undefined };
     const installSelection = (agentCtx) => {
-      control.dispose = installModelSelection(agentCtx, control.selection);
+      control.dispose = installModelSelection(agentCtx);
     };
 
     // A session that runs under an agent preset mounts it during setup, exactly
@@ -1285,5 +1270,63 @@ export class PaseoHarnessServer {
 
   hasAdapterFor(provider) {
     return this.ctx.get('llm')?.listProviders().some((entry) => entry.id === provider) ?? false;
+  }
+
+  modelSelection(rec) {
+    const model = rec.handle.agent.model;
+    if (typeof model?.current !== 'function' || typeof model?.select !== 'function') {
+      throw new Error('DSH runtime must expose agent.model.current() and agent.model.select()');
+    }
+    const current = model.current();
+    if (typeof current?.provider !== 'string' || typeof current?.model !== 'string') {
+      throw new Error('DSH agent has no current model selection');
+    }
+    return { ...current };
+  }
+
+  async applyConfig(params) {
+    if (typeof params.preset === 'string' && params.preset !== '') {
+      await this.setPreset(params.sessionId, params.preset);
+    }
+    const rec = this.sessions.get(params.sessionId);
+    if (rec === undefined) {
+      if (typeof params.provider === 'string') this.provider = params.provider;
+      if (typeof params.model === 'string') this.model = params.model;
+      if (params.reasoningEffort !== undefined) {
+        this.reasoningEffort = effortOf(params.reasoningEffort);
+      }
+      return {
+        provider: this.provider,
+        model: this.model,
+        reasoningEffort: this.reasoningEffort ?? null,
+        preset: this.currentPreset(params.sessionId),
+      };
+    }
+    this.assertLiveAgent(rec, params.sessionId);
+    const current = this.modelSelection(rec);
+    const next = { ...current };
+    if (typeof params.provider === 'string') next.provider = params.provider;
+    if (typeof params.model === 'string') next.model = params.model;
+    if (params.reasoningEffort !== undefined) {
+      const effort = effortOf(params.reasoningEffort);
+      if (effort === undefined) delete next.reasoningEffort;
+      else next.reasoningEffort = effort;
+    }
+    if (next.provider === undefined || next.model === undefined) {
+      throw new Error('model selection requires both provider and model');
+    }
+    const changed = next.provider !== current.provider || next.model !== current.model
+      || next.reasoningEffort !== current.reasoningEffort;
+    if (changed) {
+      await this.ctx.get('llm').resolveCallConfig(next);
+      this.assertLiveAgent(rec, params.sessionId);
+      rec.handle.agent.model.select(next);
+    }
+    const applied = this.modelSelection(rec);
+    return {
+      ...applied,
+      reasoningEffort: applied.reasoningEffort ?? null,
+      preset: this.currentPreset(params.sessionId),
+    };
   }
 }
