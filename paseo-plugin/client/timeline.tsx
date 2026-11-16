@@ -14,7 +14,7 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { useSettings } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, useSettings } from "@getpaseo/plugin/client";
 import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as ReactNative from "react-native";
@@ -34,8 +34,17 @@ const RNAnimated = ReactNative as unknown as {
   StyleSheet: { create<T>(styles: T): T };
 };
 const AnimatedView = RNAnimated.Animated.View;
+const ImageView = (ReactNative as unknown as {
+  Image: import("react").ComponentType<{
+    source: { uri: string };
+    resizeMode?: string;
+    style?: unknown;
+    accessibilityLabel?: string;
+  }>;
+}).Image;
 
 import { z } from "zod";
+import { imagePreviewRpc } from "../shared/image-preview";
 import { TIMELINE_STYLE_DEFAULTS, timelineStyleSettings, type TimelineStyleValues } from "../shared/settings";
 
 type Phase = "streaming" | "complete";
@@ -279,6 +288,55 @@ function CommandBlock({ text, theme, maxHeight }: { text: string; theme: Theme; 
           {text}
         </Text>
       </ScrollView>
+    </View>
+  );
+}
+
+/** Image preview for a read_image tool call; bytes come from the daemon RPC. */
+function ImagePreview({ agentId, path, theme }: { agentId: string; path: string; theme: Theme }) {
+  const cwd = useAgent(agentId, (agent) => agent.cwd) ?? "";
+  const readImage = useRpc(imagePreviewRpc);
+  const window = useWindowDimensions();
+  const [state, setState] = useState<
+    { status: "loading" } | { status: "ready"; uri: string } | { status: "error"; error: string }
+  >({ status: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    void readImage({ cwd, path })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.dataUri !== null) setState({ status: "ready", uri: result.dataUri });
+        else setState({ status: "error", error: result.error ?? "无法读取图片" });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, path, readImage]);
+  if (state.status === "loading") {
+    return <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>载入图片…</Text>;
+  }
+  if (state.status === "error") {
+    return <Text style={[styles.imageHint, { color: theme.colors.statusDanger }]}>{state.error}</Text>;
+  }
+  return (
+    <View
+      style={[
+        styles.imageFrame,
+        { borderColor: theme.colors.border, height: Math.min(360, Math.max(180, Math.round(window.height * 0.32))) },
+      ]}
+    >
+      <ImageView
+        source={{ uri: state.uri }}
+        resizeMode="contain"
+        accessibilityLabel="图片预览"
+        style={styles.image}
+      />
     </View>
   );
 }
@@ -1004,7 +1062,7 @@ function tokenColor(kind: TokenKind, theme: Theme): string | undefined {
   }
 }
 
-function HighlightedText({ text, language, theme }: { text: string; language: Language; theme: Theme }) {
+function HighlightedText({ text, language, theme, wrap = false }: { text: string; language: Language; theme: Theme; wrap?: boolean }) {
   const tokens = useMemo(() => {
     const lines = text.split("\n");
     const result: Token[] = [];
@@ -1021,7 +1079,7 @@ function HighlightedText({ text, language, theme }: { text: string; language: La
         styles.codeText,
         styles.mono,
         { color: theme.colors.foreground },
-        Platform.OS === "web" ? ({ whiteSpace: "pre" } as any) : null,
+        Platform.OS === "web" ? ({ whiteSpace: wrap ? "pre-wrap" : "pre" } as any) : null,
       ]}
     >
       {tokens.map((token, index) => {
@@ -1034,29 +1092,8 @@ function HighlightedText({ text, language, theme }: { text: string; language: La
   );
 }
 
-function CodeBox({ text, language, theme }: { text: string; language: Language; theme: Theme }) {
-  const background = sheetBackground(theme);
-  return (
-    <View
-      style={[
-        styles.codeBox,
-        { borderColor: theme.colors.border },
-        Platform.OS === "web"
-          ? ({ backgroundImage: `linear-gradient(${background}, ${background})` } as any)
-          : { backgroundColor: background },
-      ]}
-    >
-      <ScrollView style={styles.codeScroll} contentContainerStyle={styles.codeScrollContent} showsVerticalScrollIndicator>
-        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.codeRow}>
-          <HighlightedText text={text} language={language} theme={theme} />
-        </ScrollView>
-      </ScrollView>
-    </View>
-  );
-}
-
-/** Content-sized code surface for the desktop inline expansion, capped by maxHeight. */
-function InlineCodeBox({
+/** Shared code surface: wrap toggle, copy, and both-axis scrolling. */
+function CodeSurface({
   text,
   language,
   theme,
@@ -1065,29 +1102,55 @@ function InlineCodeBox({
   text: string;
   language: Language;
   theme: Theme;
-  maxHeight: number;
+  maxHeight?: number;
 }) {
+  const [wrap, setWrap] = useState(false);
+  const toast = useToast();
   const background = sheetBackground(theme);
+  const copy = useCallback(() => {
+    void copyText(text)
+      .then(() => toast.show("已复制"))
+      .catch(() => toast.error("复制失败"));
+  }, [text, toast]);
   return (
     <View
       style={[
-        styles.inlineCodeBox,
+        styles.codeBox,
+        maxHeight === undefined ? { flex: 1 } : null,
         { borderColor: theme.colors.border },
         Platform.OS === "web"
           ? ({ backgroundImage: `linear-gradient(${background}, ${background})` } as any)
           : { backgroundColor: background },
       ]}
     >
-      <ScrollView style={{ maxHeight }} contentContainerStyle={styles.codeScrollContent} showsVerticalScrollIndicator>
-        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.codeRow}>
-          <HighlightedText text={text} language={language} theme={theme} />
-        </ScrollView>
+      <View style={[styles.codeToolbar, { borderBottomColor: theme.colors.border }]}>
+        <Pressable onPress={() => setWrap((value) => !value)} accessibilityLabel={wrap ? "不换行" : "换行"} hitSlop={6}>
+          <Text style={[styles.codeToolbarText, { color: theme.colors.foregroundMuted }]}>
+            {wrap ? "不换行" : "换行"}
+          </Text>
+        </Pressable>
+        <Pressable onPress={copy} accessibilityLabel="复制" hitSlop={6}>
+          <Icon name="Copy" size={13} color={theme.colors.foregroundMuted} />
+        </Pressable>
+      </View>
+      <ScrollView
+        style={maxHeight === undefined ? styles.codeScroll : { maxHeight }}
+        contentContainerStyle={styles.codeScrollContent}
+        showsVerticalScrollIndicator
+      >
+        {wrap ? (
+          <HighlightedText text={text} language={language} theme={theme} wrap />
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.codeRow}>
+            <HighlightedText text={text} language={language} theme={theme} />
+          </ScrollView>
+        )}
       </ScrollView>
     </View>
   );
 }
 
-function ToolRow({ item, theme, layout }: PluginTimelineItemProps<ToolData>) {
+function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolData>) {
   const [open, setOpen] = useState(false);
   const inline = layout.platform === "web";
   const window = useWindowDimensions();
@@ -1097,6 +1160,10 @@ function ToolRow({ item, theme, layout }: PluginTimelineItemProps<ToolData>) {
   const language = useMemo(() => toolLanguage(data), [data]);
   const subject = useMemo(() => toolSubject(data, look), [data, look]);
   const wrapSubject = stringField(data.detail, "type") === "shell";
+  const detailInput = isRecord(data.detail?.input) ? data.detail.input : undefined;
+  const imagePath = data.name === "read_image"
+    ? stringField(data.detail, "filePath") ?? stringField(detailInput, "file_path") ?? stringField(detailInput, "path")
+    : undefined;
   const failed = data.status === "failed";
   const spacing = useTimelineStyle();
   const live = data.status === "running" || data.phase === "streaming";
@@ -1161,12 +1228,19 @@ function ToolRow({ item, theme, layout }: PluginTimelineItemProps<ToolData>) {
               maxHeight={Math.max(120, Math.round(window.height * 0.25))}
             />
           ) : null}
-          <InlineCodeBox
-            text={content}
-            language={language}
-            theme={theme}
-            maxHeight={Math.max(160, Math.round(window.height * 0.4))}
-          />
+          {imagePath === undefined ? (
+            <CodeSurface
+              text={content}
+              language={language}
+              theme={theme}
+              maxHeight={Math.max(160, Math.round(window.height * 0.4))}
+            />
+          ) : (
+            <View style={styles.imageBody}>
+              <ImagePreview agentId={agentId} path={imagePath} theme={theme} />
+              <Text style={[styles.imageCaption, { color: theme.colors.foregroundMuted }]}>{content}</Text>
+            </View>
+          )}
         </View>
       ) : null}
       {inline ? null : (
@@ -1181,7 +1255,14 @@ function ToolRow({ item, theme, layout }: PluginTimelineItemProps<ToolData>) {
         copyValue={content}
         scrollable={false}
       >
-        {content === undefined ? null : <CodeBox text={content} language={language} theme={theme} />}
+        {content === undefined ? null : imagePath === undefined ? (
+          <CodeSurface text={content} language={language} theme={theme} />
+        ) : (
+          <View style={styles.imageBody}>
+            <ImagePreview agentId={agentId} path={imagePath} theme={theme} />
+            <Text style={[styles.imageCaption, { color: theme.colors.foregroundMuted }]}>{content}</Text>
+          </View>
+        )}
       </DetailSheet>
       )}
     </View>
@@ -1312,13 +1393,28 @@ const styles = {
   commandContent: { paddingHorizontal: 10, paddingVertical: 8 },
   commandText: { fontSize: 12, lineHeight: 18 },
   inlineTool: { marginTop: 6, marginBottom: 10, paddingHorizontal: 2, gap: 0 },
+  imageBody: { flex: 1, gap: 8 },
+  imageFrame: { borderWidth: 1, borderRadius: 8, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+  image: { width: "100%", height: "100%" },
+  imageHint: { fontSize: 12, paddingVertical: 6 },
+  imageCaption: { fontSize: 12, lineHeight: 17 },
   inlineReasoning: { marginTop: 6, marginBottom: 10, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   inlineCodeBox: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
   inlineReasoningContent: { padding: 10 },
   sheetScroll: { flex: 1 },
   sheetContent: { paddingHorizontal: 16, paddingBottom: 32, paddingTop: 4 },
   sheetBody: { flex: 1, paddingHorizontal: 16, paddingBottom: 16, paddingTop: 4 },
-  codeBox: { flex: 1, borderWidth: 1, borderRadius: 10, overflow: "hidden" },
+  codeBox: { borderWidth: 1, borderRadius: 10, overflow: "hidden" },
+  codeToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+  },
+  codeToolbarText: { fontSize: 11 },
   codeScroll: { flex: 1 },
   codeScrollContent: { padding: 12 },
   codeRow: { paddingRight: 12 },
