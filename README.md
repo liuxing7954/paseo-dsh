@@ -31,6 +31,7 @@ DSH 侧是一个 profile bundle。
 | 人设预设（Preset） | ❌ | ✅ profile 挂了 agent-preset registry 时，composer 出现 **Preset** 下拉（建会话时选、首回合后锁定） |
 | 会话恢复 / 导入 | ❌ 无历史、无法导入 | ✅ 重开按 Paseo 的 `history: replay` 回放历史；**导入** DSH 原生会话（`session.list`，从 `~/.dsh/sessions` 列举） |
 | 对话 rewind | ❌ | ✅ 在用户消息上回退对话；DSH 用 fork 保留该消息之前的事件，不改动工作区文件 |
+| DSH Plugins 页 | — | ✅ 侧边栏页面列出 profile 的 bundle；启停、安装 registry 上声明 `dsh.bundle` 的包、卸载、检查更新；改动对新会话生效 |
 | 终止后续聊 | — | ✅ 只取消当前回合，会话保留 |
 
 ## 🤖 复制这段给你的 AI Agent（推荐）
