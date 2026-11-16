@@ -1,5 +1,7 @@
 dsh-paseo adds a native provider to Paseo for DeepSeek Harness (`dsh`), so a Paseo agent runs as a DSH session instead of an ACP client. The conversation stays in Paseo's normal agent view, and the plugin adds no screens of its own. It is a community plugin, not an official DeepSeek or Paseo product.
 
+![A DSH session in Paseo: thinking rows, a shell and an image tool, per-turn stats, and the model and thinking controls in the composer](https://raw.githubusercontent.com/liuxing7954/paseo-dsh/af460f9af293131e07ebe357c41aa9e652ccf153/docs/assets/paseo-dsh-overview.png)
+
 Each Paseo agent session starts one `dsh --profile paseo` child process on the daemon machine and talks to it over a local stdio bridge. The process runs as your operating system user with the daemon's environment, so the credentials and permission policy are the ones DSH already uses; the plugin adds no sandbox of its own. Model and reasoning-effort choices come from the catalog DSH reports for the profile, so they follow your DSH configuration.
 
 DeepSeek Harness must be installed and logged in on the daemon machine, with `dsh` on the daemon's `PATH` or set through the provider command override. The plugin needs Paseo 0.9.2 or newer and Node.js 22 or newer on the daemon, and DSH 0.2.1-rc.2 is the tested line. On first use it provisions `~/.dsh/profiles/paseo`, and it never overwrites an existing profile file, so local edits to `cordis.patch.yml` survive reloads.
