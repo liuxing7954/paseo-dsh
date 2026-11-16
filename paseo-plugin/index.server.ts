@@ -45,17 +45,28 @@ export default function contribute(server: PluginServerContext) {
 
   server.registerSettings(timelineStyleSettings);
   server.handle(imagePreviewRpc, async (input) => {
-    const empty = { dataUri: null, mime: null, error: null, bytes: null, limit: MAX_IMAGE_BYTES, tooLarge: false };
+    // The daemon answers with a code, never a sentence: the app picks the
+    // language, and `errorDetail` carries the raw reason the operating system
+    // gave so a real failure is still readable.
+    const empty = {
+      dataUri: null,
+      mime: null,
+      errorCode: null,
+      errorDetail: null,
+      bytes: null,
+      limit: MAX_IMAGE_BYTES,
+      tooLarge: false,
+    } as const;
     const absolute = isAbsolute(input.path) ? input.path : resolve(input.cwd || process.cwd(), input.path);
     const mime = IMAGE_MIME[extname(absolute).toLowerCase()];
     if (mime === undefined) {
-      return { ...empty, error: "不支持的图片格式" };
+      return { ...empty, errorCode: "unsupported-format" as const };
     }
     try {
       const entry = await stat(absolute);
-      if (!entry.isFile()) return { ...empty, mime, error: "不是文件" };
+      if (!entry.isFile()) return { ...empty, mime, errorCode: "not-file" as const };
       if (entry.size > HARD_MAX_IMAGE_BYTES) {
-        return { ...empty, mime, bytes: entry.size, error: "图片超过 64MB 硬上限，无法预览" };
+        return { ...empty, mime, bytes: entry.size, errorCode: "too-large-hard" as const };
       }
       if (entry.size > MAX_IMAGE_BYTES && input.allowLarge !== true) {
         return {
@@ -63,7 +74,7 @@ export default function contribute(server: PluginServerContext) {
           mime,
           bytes: entry.size,
           tooLarge: true,
-          error: `图片较大（${(entry.size / 1024 / 1024).toFixed(1)}MB，超过 12MB 预览上限）`,
+          errorCode: "too-large" as const,
         };
       }
       const bytes = await readFile(absolute);
@@ -77,7 +88,8 @@ export default function contribute(server: PluginServerContext) {
       return {
         ...empty,
         mime,
-        error: error instanceof Error ? error.message : String(error),
+        errorCode: "unreadable" as const,
+        errorDetail: error instanceof Error ? error.message : String(error),
       };
     }
   });

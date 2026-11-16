@@ -55,6 +55,7 @@ Paseo  ⇄  paseo-plugin/（direct provider 插件，跑在 daemon 进程里）
 | **取消是取消回合，不是杀进程** | 杀进程会连会话一起报废 |
 | **不要硬编码某个人的 provider/model** | 这个仓库是给别人用的。路由从 profile 读，读不到就带说明失败 |
 | **改了 `dsh-bridge/` 必须重生成内嵌桥** | `paseo-plugin/server/bridge-assets.ts` 是桥的 base64 内嵌副本，供插件自举 profile（Paseo 安装插件不跑脚本）。跑 `node paseo-plugin/scripts/generate-bridge-assets.mjs`（`npm publish` 的 `prepack` 也会跑），并提交生成结果 |
+| **用户可见文案必须中英双语** | 英文读者不该在英文界面看到「思考」，中文读者也不该看到 `Thought`。规范见 [docs/I18N.md](./docs/I18N.md)，改完跑 `node scripts/check-locales.mjs`。硬编码单语文案是缺陷，不是待办 |
 
 ### 改完怎么验证
 
@@ -66,6 +67,7 @@ node harness/catalog.mjs      # provider / 模型 / 每个模型的真实思考�
 node harness/probe.mjs        # 端到端提问往返
 node harness/route-test.mjs   # 逐条路由跑真实回合
 cd paseo-plugin && npx tsc --noEmit
+cd paseo-plugin && node scripts/check-locales.mjs   # 双语键、占位符、复数、孤儿键
 ```
 
 **动了插件层（`paseo-plugin/server/*.ts`）就一定跑 `harness/plugin-check.cjs`**——
@@ -82,7 +84,23 @@ cd paseo-plugin && npx tsc --noEmit
 - 确认没有引入任何具体的 provider 名、模型 id、base URL、密钥
 - 用户本机路径（`/Users/...`）不要出现在任何文件里
 
-## 三、发布流程（硬性）
+## 三、国际化（硬性）
+
+这个仓库是双语项目：**任何新增的用户可见文案，都要同时有英文和简体中文，并且跟随 Paseo 的
+应用语言显示**。新增功能、改文案、加工具行、加设置项，一律按 [docs/I18N.md](./docs/I18N.md) 做。
+
+四条最容易犯的错，先记住：
+
+1. **按绘制者分类**：插件自己画的 UI 走 `useTranslation(...).t()`；注册给宿主的持久标签
+   （设置页标题、命令中心、斜杠命令描述）走 `messages.message(key)`——`t()` 的结果是快照，
+   切换语言不会重算。
+2. **daemon 不许猜语言**：`server/` 里不要往 RPC 输出塞句子，返回错误码让客户端出词；
+   宿主必须原样显示的那一两句（preset 标记、时间线 notification）写成中英并列。
+3. **新工具必须落进插件行样式**：认识的工具给它专属动词和图标，不认识的落到通用行（`Wrench` +
+   工具名）。**不许**因为不认识就退回宿主的原样式，也不许悄悄不显示。
+4. **`zh-CN` 可以少键，`en` 不行**：英文是键的权威来源；漏翻是回落，漏键是 bug。
+
+## 四、发布流程（硬性）
 
 **产物推送必须等用户本机测试通过并明确确认。** 本地改完可以先 commit / push 代码到仓库，
 但 `npm publish`、`npm deprecate`、目录收录（paseo.cafe 等）、打 tag、发 Release 一律

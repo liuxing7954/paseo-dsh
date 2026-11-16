@@ -9,6 +9,10 @@ import { z } from "zod";
  * Files above the soft limit are reported as `tooLarge` so the client can ask
  * the reader before paying the base64/WebSocket cost; `allowLarge` bypasses it
  * up to the daemon's hard ceiling.
+ *
+ * Failures cross the wire as a code plus the raw operating-system detail, never
+ * as a sentence: the daemon does not know which language the app is showing,
+ * so the client is the one that phrases the reason.
  */
 export const imagePreviewRpc = defineRpc({
   name: "file.image",
@@ -20,9 +24,12 @@ export const imagePreviewRpc = defineRpc({
   output: z.object({
     dataUri: z.string().nullable(),
     mime: z.string().nullable(),
-    error: z.string().nullable(),
+    errorCode: z.enum(["unsupported-format", "not-file", "too-large", "too-large-hard", "unreadable"]).nullable(),
+    errorDetail: z.string().nullable(),
     bytes: z.number().nullable(),
     limit: z.number().nullable(),
     tooLarge: z.boolean(),
   }),
 });
+
+export type ImageErrorCode = z.infer<typeof imagePreviewRpc.output>["errorCode"] & string;

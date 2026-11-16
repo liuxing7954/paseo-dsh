@@ -1,0 +1,122 @@
+{
+  "timeline": {
+    "thinking": {
+      "verb": "思考",
+      "live": "思考中…",
+      "done": "已思考"
+    },
+    "status": {
+      "running": "运行中",
+      "failed": "失败",
+      "canceled": "已取消",
+      "done": "完成"
+    },
+    "row": {
+      "running": "运行中",
+      "imagePreview": "图片预览",
+      "loadingImage": "载入图片…",
+      "loadAnyway": "仍要加载",
+      "copy": "复制",
+      "copied": "已复制",
+      "copyFailed": "复制失败",
+      "fullscreen": "全屏",
+      "exitFullscreen": "退出全屏",
+      "close": "关闭",
+      "wrap": "换行",
+      "noWrap": "不换行"
+    },
+    "tool": {
+      "command": "命令",
+      "image": "看图",
+      "read": "读取",
+      "write": "写入",
+      "edit": "编辑",
+      "search": "搜索",
+      "webSearch": "网页搜索",
+      "fetch": "抓取",
+      "browser": "浏览器",
+      "code": "运行代码",
+      "tasks": "任务",
+      "question": "提问"
+    },
+    "browser": {
+      "open": "打开网页",
+      "click": "点击",
+      "type": "输入",
+      "snapshot": "截图",
+      "scroll": "滚动",
+      "navigate": "导航",
+      "wait": "等待",
+      "close": "关闭",
+      "run": "执行",
+      "find": "查找"
+    },
+    "image": {
+      "unsupportedFormat": "不支持的图片格式",
+      "notFile": "不是文件",
+      "tooLarge": "图片较大（{{size}}MB，超过 {{limit}}MB 预览上限）",
+      "tooLargeHard": "图片超过 64MB 硬上限，无法预览",
+      "unreadable": "无法读取图片",
+      "detail": "{{message}}"
+    }
+  },
+  "streamStats": {
+    "turnsSteps": "{{turns}} 轮 · {{steps}} 步",
+    "firstToken": "首字 {{latency}}",
+    "contextPercent": "上下文 {{percent}}%",
+    "cacheHit": "缓存命中 {{percent}}%",
+    "expand": "展开回答统计",
+    "collapse": "收起回答统计",
+    "contextLine": "上下文  {{used}} / {{max}}  {{bar}}  {{percent}}%",
+    "tokensLine": "Tokens  {{parts}}",
+    "tokenInput": "输入 {{tokens}}",
+    "tokenCached": "缓存 {{tokens}}",
+    "tokenOutput": "输出 {{tokens}}",
+    "routeLine": "路由  {{route}}",
+    "routeWithThinking": "路由  {{route}} · 思考 {{option}}",
+    "toolsLine": "工具  {{calls}}{{duration}}",
+    "tools_other": "{{count}} 次"
+  },
+  "settings": {
+    "title": "时间线样式",
+    "intro": "工具行间距、行高和命令抽屉高度。保存后立即生效，不需要重启 Paseo。",
+    "save": "保存",
+    "saving": "保存中…",
+    "reset": "恢复默认",
+    "saved": "已保存",
+    "saveFailed": "保存失败",
+    "resetDone": "已恢复默认值",
+    "resetFailed": "重置失败",
+    "invalidNumber": "「{{label}}」不是有效数字",
+    "field": {
+      "toolRowMarginY": {
+        "label": "工具之间的额外间距",
+        "hint": "叠加在宿主固定 16px 之上，可填负数：8 → 约 24px，-8 → 约 8px，-16 → 约 0px。范围 -16 ~ 24。"
+      },
+      "liveReasoningRowMarginY": {
+        "label": "正在输出的思考行额外间距",
+        "hint": "只作用于正在流式输出的思考行。默认 8，负值可能重叠。"
+      },
+      "toolRowPaddingY": {
+        "label": "工具行上下内边距（行内留白）",
+        "hint": "只改行内留白，不改工具之间的距离；要缩小行间距请改上面的“工具之间的额外间距”。范围 0 ~ 12。"
+      },
+      "toolRowMinHeight": {
+        "label": "工具行最小高度",
+        "hint": "整行至少多高；配合内边距 0 可压到接近图标高度（约 17px）。范围 12 ~ 64。"
+      },
+      "toolRowGap": {
+        "label": "图标与文字的水平间距",
+        "hint": "图标、动词、目标之间。范围 0 ~ 24。"
+      },
+      "commandMaxHeightRatio": {
+        "label": "命令块最大高度（窗口占比）",
+        "hint": "0.25 表示最多占窗口高度的四分之一；超过后命令块内部滚动，输出区始终保留。范围 0.1 ~ 0.6。"
+      },
+      "commandMinHeight": {
+        "label": "命令块最小高度上限",
+        "hint": "窗口很小时仍给命令块保留的高度（像素）。范围 60 ~ 360。"
+      }
+    }
+  }
+}

@@ -14,7 +14,7 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { useAgent, useRpc, useSettings } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, useSettings, useTranslation } from "@getpaseo/plugin/client";
 import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as ReactNative from "react-native";
@@ -44,8 +44,9 @@ const ImageView = (ReactNative as unknown as {
 }).Image;
 
 import { z } from "zod";
-import { imagePreviewRpc } from "../shared/image-preview";
+import { imagePreviewRpc, type ImageErrorCode } from "../shared/image-preview";
 import { TIMELINE_STYLE_DEFAULTS, timelineStyleSettings, type TimelineStyleValues } from "../shared/settings";
+import { messages, type BrowserVerbKey, type ToolVerb, type ToolVerbKey } from "./messages";
 
 type Phase = "streaming" | "complete";
 type Theme = PluginTimelineItemProps<unknown>["theme"];
@@ -63,6 +64,16 @@ const reasoningSchema = z.object({
 
 const toolDetailSchema = z.record(z.string(), z.unknown());
 
+const todoSchema = z.object({
+  items: z.array(
+    z.object({
+      text: z.string(),
+      status: z.string(),
+      activeForm: z.string().optional(),
+    }),
+  ),
+});
+
 const toolSchema = z.object({
   name: z.string(),
   status: z.string(),
@@ -73,6 +84,7 @@ const toolSchema = z.object({
 });
 
 type ReasoningData = z.infer<typeof reasoningSchema>;
+type TodoData = z.infer<typeof todoSchema>;
 type ToolData = z.infer<typeof toolSchema>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -233,6 +245,7 @@ const runningDotPulse = Platform.OS === "web"
 
 /** The breathing accent dot that stands in for a running tool's glyph. */
 function RunningDot({ color }: { color: string }) {
+  const { t } = useTranslation(messages);
   const pulseRef = useRef<{ interpolate(config: { inputRange: number[]; outputRange: number[] }): unknown } | null>(null);
   if (pulseRef.current === null) pulseRef.current = new RNAnimated.Animated.Value(0);
   const pulse = pulseRef.current;
@@ -258,11 +271,11 @@ function RunningDot({ color }: { color: string }) {
   };
   if (Platform.OS === "web") {
     return (
-      <View accessibilityRole="progressbar" accessibilityLabel="运行中" style={[shape, runningDotPulse as never]} />
+      <View accessibilityRole="progressbar" accessibilityLabel={t("timeline.row.running")} style={[shape, runningDotPulse as never]} />
     );
   }
   return (
-    <AnimatedView accessibilityRole="progressbar" accessibilityLabel="运行中" style={[shape, { opacity }]} />
+    <AnimatedView accessibilityRole="progressbar" accessibilityLabel={t("timeline.row.running")} style={[shape, { opacity }]} />
   );
 }
 
@@ -294,14 +307,15 @@ function CommandBlock({ text, theme, maxHeight }: { text: string; theme: Theme; 
 
 /** Image preview for a read_image tool call; bytes come from the daemon RPC. */
 function ImagePreview({ agentId, path, theme }: { agentId: string; path: string; theme: Theme }) {
+  const { t } = useTranslation(messages);
   const cwd = useAgent(agentId, (agent) => agent.cwd) ?? "";
   const readImage = useRpc(imagePreviewRpc);
   const window = useWindowDimensions();
   const [state, setState] = useState<
     | { status: "loading" }
     | { status: "ready"; uri: string }
-    | { status: "tooLarge"; error: string }
-    | { status: "error"; error: string }
+    | { status: "tooLarge"; bytes: number; limit: number }
+    | { status: "error"; code: ImageErrorCode; detail: string | null }
   >({ status: "loading" });
 
   const load = useCallback(
@@ -312,13 +326,17 @@ function ImagePreview({ agentId, path, theme }: { agentId: string; path: string;
           if (result.dataUri !== null) {
             setState({ status: "ready", uri: result.dataUri });
           } else if (result.tooLarge) {
-            setState({ status: "tooLarge", error: result.error ?? "图片较大" });
+            setState({ status: "tooLarge", bytes: result.bytes ?? 0, limit: result.limit ?? 0 });
           } else {
-            setState({ status: "error", error: result.error ?? "无法读取图片" });
+            setState({ status: "error", code: result.errorCode ?? "unreadable", detail: result.errorDetail });
           }
         })
         .catch((error: unknown) => {
-          setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+          setState({
+            status: "error",
+            code: "unreadable",
+            detail: error instanceof Error ? error.message : String(error),
+          });
         });
     },
     [cwd, path, readImage],
@@ -329,20 +347,38 @@ function ImagePreview({ agentId, path, theme }: { agentId: string; path: string;
   }, [load]);
 
   if (state.status === "loading") {
-    return <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>载入图片…</Text>;
+    return <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>{t("timeline.row.loadingImage")}</Text>;
   }
   if (state.status === "tooLarge") {
     return (
       <View style={styles.imageTooLarge}>
-        <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>{state.error}</Text>
-        <Pressable onPress={() => load(true)} accessibilityLabel="仍要加载" hitSlop={6}>
-          <Text style={[styles.imageLoadAnyway, { color: theme.colors.accent }]}>仍要加载</Text>
+        <Text style={[styles.imageHint, { color: theme.colors.foregroundMuted }]}>
+          {t("timeline.image.tooLarge", {
+            size: (state.bytes / 1024 / 1024).toFixed(1),
+            limit: Math.round(state.limit / 1024 / 1024),
+          })}
+        </Text>
+        <Pressable onPress={() => load(true)} accessibilityLabel={t("timeline.row.loadAnyway")} hitSlop={6}>
+          <Text style={[styles.imageLoadAnyway, { color: theme.colors.accent }]}>{t("timeline.row.loadAnyway")}</Text>
         </Pressable>
       </View>
     );
   }
   if (state.status === "error") {
-    return <Text style={[styles.imageHint, { color: theme.colors.statusDanger }]}>{state.error}</Text>;
+    const base = state.code === "unsupported-format"
+      ? t("timeline.image.unsupportedFormat")
+      : state.code === "not-file"
+        ? t("timeline.image.notFile")
+        : state.code === "too-large-hard"
+          ? t("timeline.image.tooLargeHard")
+          : t("timeline.image.unreadable");
+    return (
+      <Text style={[styles.imageHint, { color: theme.colors.statusDanger }]}>
+        {state.detail === null || state.detail === ""
+          ? base
+          : `${base} · ${t("timeline.image.detail", { message: state.detail })}`}
+      </Text>
+    );
   }
   return (
     <View
@@ -354,7 +390,7 @@ function ImagePreview({ agentId, path, theme }: { agentId: string; path: string;
       <ImageView
         source={{ uri: state.uri }}
         resizeMode="contain"
-        accessibilityLabel="图片预览"
+        accessibilityLabel={t("timeline.row.imagePreview")}
         style={styles.image}
       />
     </View>
@@ -387,12 +423,13 @@ function SheetPanel({
   children: ReactNode;
 }) {
   const toast = useToast();
+  const { t } = useTranslation(messages);
   const copy = useCallback(() => {
     if (copyValue === undefined) return;
     void copyText(copyValue)
-      .then(() => toast.show("已复制"))
-      .catch(() => toast.error("复制失败"));
-  }, [copyValue, toast]);
+      .then(() => toast.show(t("timeline.row.copied")))
+      .catch(() => toast.error(t("timeline.row.copyFailed")));
+  }, [copyValue, toast, t]);
   const window = useWindowDimensions();
   const style = useTimelineStyle();
   return (
@@ -402,14 +439,14 @@ function SheetPanel({
         <Icon name={icon} size={16} color={theme.colors.foregroundMuted} />
         <Text numberOfLines={1} style={[styles.sheetTitle, { color: theme.colors.foreground }]}>{title}</Text>
         {copyValue === undefined ? null : (
-          <Pressable onPress={copy} accessibilityLabel="复制" hitSlop={8}>
+          <Pressable onPress={copy} accessibilityLabel={t("timeline.row.copy")} hitSlop={8}>
             <Icon name="Copy" size={16} color={theme.colors.foregroundMuted} />
           </Pressable>
         )}
         {onToggleFullscreen === undefined ? null : (
           <Pressable
             onPress={onToggleFullscreen}
-            accessibilityLabel={fullscreen ? "退出全屏" : "全屏"}
+            accessibilityLabel={fullscreen ? t("timeline.row.exitFullscreen") : t("timeline.row.fullscreen")}
             hitSlop={8}
           >
             <Icon
@@ -419,7 +456,7 @@ function SheetPanel({
             />
           </Pressable>
         )}
-        <Pressable onPress={onClose} accessibilityLabel="关闭" hitSlop={8}>
+        <Pressable onPress={onClose} accessibilityLabel={t("timeline.row.close")} hitSlop={8}>
           <Icon name="X" size={18} color={theme.colors.foregroundMuted} />
         </Pressable>
       </View>
@@ -469,6 +506,8 @@ function DetailSheet({
   children: ReactNode;
 }) {
   const [full, setFull] = useState(false);
+  const { t } = useTranslation(messages);
+  const backdropLabel = t("timeline.row.close");
   useEffect(() => {
     if (!open) setFull(false);
   }, [open]);
@@ -476,7 +515,7 @@ function DetailSheet({
   return (
     <Modal visible={open} transparent animationType={Platform.OS === "web" ? "none" : "slide"} onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modalRoot}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="关闭" />
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={backdropLabel} />
         <View
           style={[
             styles.nativeSheet,
@@ -507,12 +546,15 @@ function DetailSheet({
 }
 
 function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<ReasoningData>) {
+  const { t } = useTranslation(messages);
   const streaming = item.data.phase === "streaming";
   const inline = layout.platform === "web";
   const [open, setOpen] = useState(false);
   const window = useWindowDimensions();
   const text = item.data.text;
-  const preview = streaming ? lastSentence(text) || "思考中…" : firstSentence(text) || "已思考";
+  const preview = streaming
+    ? lastSentence(text) || t("timeline.thinking.live")
+    : firstSentence(text) || t("timeline.thinking.done");
   const revealed = usePacedText(text, streaming && open);
   const spacing = useTimelineStyle();
   // The live tail is laid out by the host with its own gap; a negative pull
@@ -530,7 +572,7 @@ function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<Reasoning
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={streaming ? "思考中" : "已思考"}
+        accessibilityLabel={streaming ? t("timeline.thinking.live") : t("timeline.thinking.done")}
         onPress={() => (inline ? setOpen((value) => !value) : setOpen(true))}
         hitSlop={6}
         style={({ pressed }: { pressed: boolean }) => [
@@ -541,7 +583,7 @@ function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<Reasoning
         <View style={styles.lead}>
           <Icon name="Brain" size={14} color={streaming ? theme.colors.accent : theme.colors.foregroundMuted} />
         </View>
-        <Text style={[styles.verb, { color: theme.colors.foregroundMuted }]}>思考</Text>
+        <Text style={[styles.verb, { color: theme.colors.foregroundMuted }]}>{t("timeline.thinking.verb")}</Text>
         <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
           {preview}
         </Text>
@@ -572,7 +614,7 @@ function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<Reasoning
       <DetailSheet
         open={open}
         onClose={() => setOpen(false)}
-        title="思考"
+        title={t("timeline.thinking.verb")}
         icon="Brain"
         theme={theme}
         copyValue={revealed}
@@ -584,11 +626,24 @@ function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<Reasoning
   );
 }
 
-type ToolKind = "shell" | "read" | "write" | "edit" | "search" | "fetch" | "mcp" | "browser" | "code" | "other";
+type ToolKind =
+  | "shell"
+  | "read"
+  | "write"
+  | "edit"
+  | "search"
+  | "fetch"
+  | "mcp"
+  | "browser"
+  | "code"
+  | "todo"
+  | "question"
+  | "other";
 
 interface ToolLook {
   icon: string;
-  verb: string;
+  /** Resolved when the row renders, so a language switch re-words it. */
+  verb: ToolVerb;
   target: string;
   mark?: string;
 }
@@ -666,6 +721,9 @@ function toolKindOf(name: string, detail: Record<string, unknown> | undefined): 
   if (type === "edit") return "edit";
   if (type === "search") return "search";
   if (type === "fetch") return "fetch";
+  // These two carry no native detail shape, so their rows are chosen by name.
+  if (name === "todo_write") return "todo";
+  if (name === "ask_user_question") return "question";
   if (name.startsWith("mcp__")) return "mcp";
   if (name === "run_code") return "code";
   if (/(?:^|_)browser_/.test(name)) return "browser";
@@ -677,17 +735,17 @@ function toolKindOf(name: string, detail: Record<string, unknown> | undefined): 
   return "other";
 }
 
-const BROWSER_VERBS: Readonly<Array<[RegExp, string]>> = [
-  [/^(?:navigate|open|goto|go|new_tab|open_url)$/, "打开网页"],
-  [/^(?:click|press|tap)$/, "点击"],
-  [/^(?:type|fill|input|press_key|key)$/, "输入"],
-  [/^(?:snapshot|screenshot|capture)$/, "截图"],
-  [/^(?:scroll)$/, "滚动"],
-  [/^(?:back|forward|reload)$/, "导航"],
-  [/^(?:wait)$/, "等待"],
-  [/^(?:close|close_tab)$/, "关闭"],
-  [/^(?:evaluate|run|run_code)$/, "执行"],
-  [/^(?:find|search)$/, "查找"],
+const BROWSER_VERBS: Readonly<Array<[RegExp, BrowserVerbKey]>> = [
+  [/^(?:navigate|open|goto|go|new_tab|open_url)$/, "timeline.browser.open"],
+  [/^(?:click|press|tap)$/, "timeline.browser.click"],
+  [/^(?:type|fill|input|press_key|key)$/, "timeline.browser.type"],
+  [/^(?:snapshot|screenshot|capture)$/, "timeline.browser.snapshot"],
+  [/^(?:scroll)$/, "timeline.browser.scroll"],
+  [/^(?:back|forward|reload)$/, "timeline.browser.navigate"],
+  [/^(?:wait)$/, "timeline.browser.wait"],
+  [/^(?:close|close_tab)$/, "timeline.browser.close"],
+  [/^(?:evaluate|run|run_code)$/, "timeline.browser.run"],
+  [/^(?:find|search)$/, "timeline.browser.find"],
 ];
 
 /** Strip the server prefix and the `browser_` stem so verbs can match on the action. */
@@ -697,11 +755,11 @@ function browserAction(name: string): string {
   return bare;
 }
 
-function browserVerb(action: string): string {
+function browserVerb(action: string): ToolVerbKey | BrowserVerbKey {
   for (const [pattern, verb] of BROWSER_VERBS) {
     if (pattern.test(action)) return verb;
   }
-  return "浏览器";
+  return "timeline.tool.browser";
 }
 
 function firstLine(text: string | undefined): string | undefined {
@@ -725,7 +783,7 @@ function toolLook(data: ToolData): ToolLook {
       const mark = program === undefined ? undefined : PROGRAM_MARKS[program];
       return {
         icon: "SquareTerminal",
-        verb: "命令",
+        verb: "timeline.tool.command",
         target: firstLine(command) ?? data.name,
         ...(mark === undefined ? {} : { mark }),
       };
@@ -734,7 +792,7 @@ function toolLook(data: ToolData): ToolLook {
       const image = data.name === "read_image";
       return {
         icon: image ? "Image" : "FileText",
-        verb: image ? "看图" : "读取",
+        verb: image ? "timeline.tool.image" : "timeline.tool.read",
         target: stringField(detail, "filePath")
           ?? stringField(input, "file_path")
           ?? stringField(input, "path")
@@ -742,9 +800,9 @@ function toolLook(data: ToolData): ToolLook {
       };
     }
     case "write":
-      return { icon: "Pencil", verb: "写入", target: stringField(detail, "filePath") ?? data.name };
+      return { icon: "Pencil", verb: "timeline.tool.write", target: stringField(detail, "filePath") ?? data.name };
     case "edit":
-      return { icon: "Pencil", verb: "编辑", target: stringField(detail, "filePath") ?? data.name };
+      return { icon: "Pencil", verb: "timeline.tool.edit", target: stringField(detail, "filePath") ?? data.name };
     case "search": {
       const query = stringField(detail, "query")
         ?? stringField(input, "query")
@@ -752,14 +810,14 @@ function toolLook(data: ToolData): ToolLook {
         ?? data.name;
       return {
         icon: "Search",
-        verb: stringField(detail, "toolName") === "web_search" ? "网页搜索" : "搜索",
+        verb: stringField(detail, "toolName") === "web_search" ? "timeline.tool.webSearch" : "timeline.tool.search",
         target: query,
       };
     }
     case "fetch":
       return {
         icon: "Globe",
-        verb: "抓取",
+        verb: "timeline.tool.fetch",
         target: hostOf(stringField(detail, "url") ?? stringField(input, "url") ?? data.name),
       };
     case "mcp": {
@@ -767,7 +825,7 @@ function toolLook(data: ToolData): ToolLook {
       const browser = parsed !== undefined && parsed.tool.includes("browser_");
       return {
         icon: browser ? "Globe" : "Plug",
-        verb: browser ? "浏览器" : "MCP",
+        verb: browser ? "timeline.tool.browser" : { text: "MCP" },
         target: parsed === undefined ? data.name : `${parsed.server} / ${parsed.tool}`,
       };
     }
@@ -786,13 +844,26 @@ function toolLook(data: ToolData): ToolLook {
     case "code":
       return {
         icon: "Code",
-        verb: "运行代码",
+        verb: "timeline.tool.code",
         target: stringField(input, "description") ?? firstLine(stringField(input, "code")) ?? "run_code",
+      };
+    case "todo": {
+      const items = todoEntries(input);
+      const done = items.filter((entry) => entry.status === "completed").length;
+      // A plain `done/total` keeps the target language-neutral: the verb is the
+      // only word this row needs.
+      return { icon: "ListChecks", verb: "timeline.tool.tasks", target: `${done}/${items.length}` };
+    }
+    case "question":
+      return {
+        icon: "HelpCircle",
+        verb: "timeline.tool.question",
+        target: firstLine(questionLines(input)) ?? data.name,
       };
     default:
       return {
         icon: "Wrench",
-        verb: data.name,
+        verb: { text: data.name },
         target: stringField(input, "url")
           ?? stringField(input, "file_path")
           ?? stringField(input, "path")
@@ -804,17 +875,84 @@ function toolLook(data: ToolData): ToolLook {
   }
 }
 
-function statusLabel(status: string): string {
-  if (status === "running") return "运行中";
-  if (status === "failed") return "失败";
-  if (status === "canceled") return "已取消";
-  return "完成";
+function statusKey(status: string) {
+  if (status === "running") return "timeline.status.running" as const;
+  if (status === "failed") return "timeline.status.failed" as const;
+  if (status === "canceled") return "timeline.status.canceled" as const;
+  return "timeline.status.done" as const;
 }
 
 function statusColor(status: string, theme: Theme): string {
   if (status === "failed") return theme.colors.statusDanger;
   if (status === "running") return theme.colors.accent;
   return theme.colors.foregroundMuted;
+}
+
+interface TodoEntry {
+  text: string;
+  status: string;
+  activeForm?: string;
+}
+
+const TODO_MARKS: Readonly<Record<string, string>> = {
+  completed: "✓",
+  in_progress: "◐",
+  pending: "○",
+};
+
+/** The `input` object of a tool detail, whichever detail shape it is. */
+function detailInput(detail: unknown): Record<string, unknown> | undefined {
+  const record = isRecord(detail) ? detail : undefined;
+  return isRecord(record?.input) ? record.input : undefined;
+}
+
+/** The checklist a `todo_write` call carries, normalized for drawing. */
+function todoEntries(input: Record<string, unknown> | undefined): TodoEntry[] {
+  const raw = input?.todos;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const text = stringField(entry, "content") ?? stringField(entry, "text");
+    if (text === undefined) return [];
+    const activeForm = stringField(entry, "activeForm");
+    const status = stringField(entry, "status")
+      ?? (entry.completed === true ? "completed" : "pending");
+    return [{
+      text,
+      status: status === "in_progress" || status === "completed" ? status : "pending",
+      ...(activeForm === undefined ? {} : { activeForm }),
+    }];
+  });
+}
+
+function checklist(items: TodoEntry[]): string {
+  return items
+    .map((entry) => {
+      // The in-progress wording is what the model is doing right now; the rest
+      // stay in their plain form so the list reads as the model wrote it.
+      const label = entry.status === "in_progress" ? entry.activeForm ?? entry.text : entry.text;
+      return `${TODO_MARKS[entry.status] ?? "○"} ${label}`;
+    })
+    .join("\n");
+}
+
+/** The questions and option labels of an `ask_user_question` call. */
+function questionLines(input: Record<string, unknown> | undefined): string {
+  const raw = input?.questions;
+  if (!Array.isArray(raw)) return stringField(input, "question") ?? "";
+  const lines: string[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue;
+    const question = stringField(entry, "question") ?? stringField(entry, "header");
+    if (question === undefined) continue;
+    lines.push(question);
+    const options = Array.isArray(entry.options) ? entry.options : [];
+    for (const option of options) {
+      const label = isRecord(option) ? stringField(option, "label") : typeof option === "string" ? option : undefined;
+      if (label !== undefined) lines.push(`  - ${label}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function readContent(content: string): string {
@@ -831,6 +969,17 @@ function toolContent(data: ToolData): string | undefined {
   if (detail === undefined) return undefined;
   const type = stringField(detail, "type");
   const input = isRecord(detail.input) ? detail.input : undefined;
+  const kind = toolKindOf(data.name, detail);
+  // These two have no detail type of their own, so their drawer body is built
+  // from the call's own input rather than from the generic JSON dump.
+  if (kind === "todo") {
+    const items = todoEntries(input);
+    return items.length === 0 ? undefined : checklist(items);
+  }
+  if (kind === "question") {
+    const lines = questionLines(input);
+    return lines === "" ? undefined : lines;
+  }
   const parts: string[] = [];
   switch (type) {
     case "shell": {
@@ -1126,12 +1275,13 @@ function CodeSurface({
 }) {
   const [wrap, setWrap] = useState(false);
   const toast = useToast();
+  const { t } = useTranslation(messages);
   const background = sheetBackground(theme);
   const copy = useCallback(() => {
     void copyText(text)
-      .then(() => toast.show("已复制"))
-      .catch(() => toast.error("复制失败"));
-  }, [text, toast]);
+      .then(() => toast.show(t("timeline.row.copied")))
+      .catch(() => toast.error(t("timeline.row.copyFailed")));
+  }, [text, toast, t]);
   return (
     <View
       style={[
@@ -1144,12 +1294,16 @@ function CodeSurface({
       ]}
     >
       <View style={[styles.codeToolbar, { borderBottomColor: theme.colors.border }]}>
-        <Pressable onPress={() => setWrap((value) => !value)} accessibilityLabel={wrap ? "不换行" : "换行"} hitSlop={6}>
+        <Pressable
+          onPress={() => setWrap((value) => !value)}
+          accessibilityLabel={wrap ? t("timeline.row.noWrap") : t("timeline.row.wrap")}
+          hitSlop={6}
+        >
           <Text style={[styles.codeToolbarText, { color: theme.colors.foregroundMuted }]}>
-            {wrap ? "不换行" : "换行"}
+            {wrap ? t("timeline.row.noWrap") : t("timeline.row.wrap")}
           </Text>
         </Pressable>
-        <Pressable onPress={copy} accessibilityLabel="复制" hitSlop={6}>
+        <Pressable onPress={copy} accessibilityLabel={t("timeline.row.copy")} hitSlop={6}>
           <Icon name="Copy" size={13} color={theme.colors.foregroundMuted} />
         </Pressable>
       </View>
@@ -1175,7 +1329,9 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
   const inline = layout.platform === "web";
   const window = useWindowDimensions();
   const data = item.data;
+  const { t } = useTranslation(messages);
   const look = useMemo(() => toolLook(data), [data]);
+  const verb = typeof look.verb === "string" ? t(look.verb) : look.verb.text;
   const content = useMemo(() => toolContent(data), [data]);
   const language = useMemo(() => toolLanguage(data), [data]);
   const subject = useMemo(() => toolSubject(data, look), [data, look]);
@@ -1203,7 +1359,7 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${look.verb}${look.target === "" ? "" : ` ${look.target}`}`}
+        accessibilityLabel={`${verb}${look.target === "" ? "" : ` ${look.target}`}`}
         onPress={openSheet}
         hitSlop={6}
         style={({ pressed }: { pressed: boolean }) => [
@@ -1223,14 +1379,14 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
           )}
         </View>
         <Text style={[styles.verb, { color: failed ? theme.colors.statusDanger : theme.colors.foregroundMuted }]}>
-          {look.verb}
+          {verb}
         </Text>
         <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
           {look.target}
         </Text>
         {data.status === "running" || data.status === "completed" ? null : (
           <Text style={[styles.meta, { color: statusColor(data.status, theme) }]}>
-            {statusLabel(data.status)}
+            {t(statusKey(data.status))}
           </Text>
         )}
         {content === undefined ? null : (
@@ -1267,7 +1423,7 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
       <DetailSheet
         open={open}
         onClose={() => setOpen(false)}
-        title={look.verb}
+        title={verb}
         subject={subject}
         subjectWrap={wrapSubject}
         icon={look.icon}
@@ -1284,6 +1440,81 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
           </View>
         )}
       </DetailSheet>
+      )}
+    </View>
+  );
+}
+
+/**
+ * The checklist Paseo would draw itself, in the plugin's compact row shape.
+ *
+ * One `todo_write` call yields one of these, so the tool row that produced it is
+ * dropped once it completes and the list never appears twice.
+ */
+function TodoRow({ item, theme, layout }: PluginTimelineItemProps<TodoData>) {
+  const { t } = useTranslation(messages);
+  const [open, setOpen] = useState(false);
+  const inline = layout.platform === "web";
+  const window = useWindowDimensions();
+  const spacing = useTimelineStyle();
+  const items = item.data.items;
+  const total = items.length;
+  const done = items.filter((entry) => entry.status === "completed").length;
+  const content = checklist(items);
+  const verb = t("timeline.tool.tasks");
+  const row = {
+    ...styles.row,
+    marginTop: spacing.toolRowMarginY,
+    marginBottom: 0,
+    paddingVertical: spacing.toolRowPaddingY,
+    minHeight: spacing.toolRowMinHeight,
+    gap: spacing.toolRowGap,
+  };
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${verb} ${done}/${total}`}
+        onPress={() => (inline ? setOpen((value) => !value) : setOpen(true))}
+        hitSlop={6}
+        style={({ pressed }: { pressed: boolean }) => [
+          row,
+          pressed ? { backgroundColor: theme.colors.surface1, borderRadius: 6 } : null,
+        ]}
+      >
+        <View style={styles.lead}>
+          <Icon name="ListChecks" size={14} color={theme.colors.foregroundMuted} />
+        </View>
+        <Text style={[styles.verb, { color: theme.colors.foregroundMuted }]}>{verb}</Text>
+        <Text numberOfLines={1} style={[styles.target, { color: theme.colors.foregroundMuted }]}>
+          {`${done}/${total}`}
+        </Text>
+        <View style={{ transform: [{ rotate: inline && open ? "90deg" : "0deg" }] }}>
+          <Icon name="ChevronRight" size={12} color={theme.colors.foregroundMuted} />
+        </View>
+      </Pressable>
+      {inline && open ? (
+        <View style={styles.inlineTool}>
+          <ScrollView
+            style={{ maxHeight: Math.max(160, Math.round(window.height * 0.35)) }}
+            contentContainerStyle={styles.inlineReasoningContent}
+            showsVerticalScrollIndicator
+          >
+            <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{content}</Text>
+          </ScrollView>
+        </View>
+      ) : null}
+      {inline ? null : (
+        <DetailSheet
+          open={open}
+          onClose={() => setOpen(false)}
+          title={verb}
+          icon="ListChecks"
+          theme={theme}
+          copyValue={content}
+        >
+          <Text selectable style={[styles.bodyText, { color: theme.colors.foreground }]}>{content}</Text>
+        </DetailSheet>
       )}
     </View>
   );
@@ -1313,17 +1544,63 @@ export function contributeTimeline(client: PluginClientContext): () => void {
       Component: ReasoningRow,
     }),
     client.addTimelineTransformer({
+      id: "dsh-todo-row",
+      query: { itemType: "todo" },
+      transform({ item }) {
+        if (item.type !== "todo") return undefined;
+        const items = item.items.flatMap((entry) => {
+          const text = typeof entry.text === "string" ? entry.text : "";
+          if (text === "") return [];
+          const status = typeof entry.status === "string"
+            ? entry.status
+            : entry.completed
+              ? "completed"
+              : "pending";
+          return [{
+            text,
+            status,
+            ...(typeof entry.activeForm === "string" ? { activeForm: entry.activeForm } : {}),
+          }];
+        });
+        if (items.length === 0) return undefined;
+        return {
+          items: [{
+            type: "plugin" as const,
+            kind: "dsh-todo",
+            version: 1,
+            data: { items },
+          }],
+        };
+      },
+    }),
+    client.addTimelineRenderer({
+      kind: "dsh-todo",
+      version: 1,
+      schema: todoSchema,
+      Component: TodoRow,
+    }),
+    client.addTimelineTransformer({
       id: "dsh-tool-row",
       query: { itemType: "tool_call" },
       transform({ item, phase }) {
         if (item.type !== "tool_call") return undefined;
         const detail = isRecord(item.detail) ? item.detail : undefined;
         const type = stringField(detail, "type");
+        // A finished `todo_write` is drawn by the checklist row above; keeping
+        // its tool row too would show one call twice.
+        if (
+          item.name === "todo_write"
+          && item.status === "completed"
+          && todoEntries(detailInput(detail)).length > 0
+        ) {
+          return { items: [] };
+        }
         // Keep Paseo's richer cards for semantic helpers; every other tool gets
-        // the shared row so a provider-specific name never shows up bare.
+        // the shared row so a provider-specific name never shows up bare, and an
+        // unfamiliar tool falls back to the generic wrench row instead of the
+        // host's own styling.
         const nativeCard = type === "sub_agent"
           || type === "worktree_setup"
-          || type === "plain_text"
           || type === "plan";
         if (nativeCard) return undefined;
         const error = item.error === null || item.error === undefined ? undefined : String(

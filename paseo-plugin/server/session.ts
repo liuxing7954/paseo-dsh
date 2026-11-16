@@ -403,9 +403,13 @@ export class DshSession {
     // A preset whose plugins failed to mount can still be listed. Mark it so the
     // composer does not offer it as a working choice: selecting it would be
     // rejected and silently snap back to the current preset.
+    //
+    // The composer draws this label itself and the daemon has no idea which
+    // language the app is showing, so the marker is written in both languages
+    // instead of picking one.
     this.#presetOptions = info.presets.map((preset) => ({
       value: preset.id,
-      label: `${preset.name ?? preset.id}${preset.broken === undefined ? "" : "（不可用）"}`,
+      label: `${preset.name ?? preset.id}${preset.broken === undefined ? "" : " (unavailable / 不可用)"}`,
     }));
   }
 
@@ -540,7 +544,9 @@ export class DshSession {
           type: "notification",
           id: `preset-error:${Date.now()}`,
           level: "error",
-          message: `切换预设失败：${message}`,
+          // Rendered by the host as written: both languages, so neither reader
+          // gets a message in the other one.
+          message: `Preset switch failed / 切换预设失败：${message}`,
         });
       }
     }
@@ -820,7 +826,9 @@ export class DshSession {
           type: "notification",
           id: `preset-error:${Date.now()}`,
           level: "error",
-          message: `切换预设失败：${message}`,
+          // Rendered by the host as written: both languages, so neither reader
+          // gets a message in the other one.
+          message: `Preset switch failed / 切换预设失败：${message}`,
         });
       }
     }

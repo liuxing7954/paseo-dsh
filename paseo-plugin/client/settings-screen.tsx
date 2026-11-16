@@ -1,18 +1,27 @@
 import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useSettings } from "@getpaseo/plugin/client";
+import { useSettings, useTranslation } from "@getpaseo/plugin/client";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { TextInput } from "@getpaseo/plugin/client/react-native";
 import {
   TIMELINE_STYLE_DEFAULTS,
-  TIMELINE_STYLE_FIELDS,
+  TIMELINE_STYLE_KEYS,
   timelineStyleSettings,
   type TimelineStyleKey,
   type TimelineStyleValues,
 } from "../shared/settings";
+import { messages } from "./messages";
+
+/** Editor rows: the key order is shared, the wording comes from the catalogs. */
+const FIELDS = TIMELINE_STYLE_KEYS.map((key) => ({
+  key,
+  label: `settings.field.${key}.label` as const,
+  hint: `settings.field.${key}.hint` as const,
+}));
 
 /** Numeric editor for the timeline row spacing and command drawer height. */
 export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
+  const { t } = useTranslation(messages);
   const settings = useSettings(timelineStyleSettings);
   const [draft, setDraft] = useState<Partial<Record<TimelineStyleKey, string>>>({});
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,64 +76,62 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const save = async () => {
     if (settings.status !== "ready") return;
     const next: TimelineStyleValues = { ...current };
-    for (const field of TIMELINE_STYLE_FIELDS) {
+    for (const field of FIELDS) {
       const value = Number.parseFloat(textOf(field.key));
       if (!Number.isFinite(value)) {
-        setNotice(`「${field.label}」不是有效数字`);
+        setNotice(t("settings.invalidNumber", { label: t(field.label) }));
         return;
       }
       next[field.key] = value;
     }
     const saved = await settings.save(next, settings.revision);
-    setNotice(saved ? "已保存" : (settings.saveError ?? "保存失败"));
+    setNotice(saved ? t("settings.saved") : (settings.saveError ?? t("settings.saveFailed")));
     if (saved) setDraft({});
   };
 
   const reset = async () => {
     const saved = await settings.reset();
-    setNotice(saved ? "已恢复默认值" : (settings.saveError ?? "重置失败"));
+    setNotice(saved ? t("settings.resetDone") : (settings.saveError ?? t("settings.resetFailed")));
     if (saved) setDraft({});
   };
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>时间线样式</Text>
-      <Text style={styles.intro}>
-        工具行间距、行高和命令抽屉高度。保存后立即生效，不需要重启 Paseo。
-      </Text>
-      {TIMELINE_STYLE_FIELDS.map((field) => (
+      <Text style={styles.title}>{t("settings.title")}</Text>
+      <Text style={styles.intro}>{t("settings.intro")}</Text>
+      {FIELDS.map((field) => (
         <View key={field.key} style={styles.field}>
-          <Text style={styles.label}>{field.label}</Text>
+          <Text style={styles.label}>{t(field.label)}</Text>
           <TextInput
             value={textOf(field.key)}
             onChangeText={(value: string) => edit(field.key, value)}
             keyboardType={field.key === "toolRowMarginY" ? (Platform.OS === "web" ? "default" : "numbers-and-punctuation") : "numeric"}
             autoCapitalize="none"
             autoCorrect={false}
-            accessibilityLabel={field.label}
+            accessibilityLabel={t(field.label)}
             style={styles.input}
           />
-          <Text style={styles.hint}>{field.hint}</Text>
+          <Text style={styles.hint}>{t(field.hint)}</Text>
         </View>
       ))}
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="保存"
+          accessibilityLabel={t("settings.save")}
           disabled={settings.status !== "ready" || settings.saving}
           onPress={() => void save()}
           style={styles.button}
         >
-          <Text style={styles.buttonText}>{settings.saving ? "保存中…" : "保存"}</Text>
+          <Text style={styles.buttonText}>{settings.saving ? t("settings.saving") : t("settings.save")}</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="恢复默认"
+          accessibilityLabel={t("settings.reset")}
           disabled={settings.status !== "ready" || settings.saving}
           onPress={() => void reset()}
           style={[styles.button, styles.secondary]}
         >
-          <Text style={styles.secondaryText}>恢复默认</Text>
+          <Text style={styles.secondaryText}>{t("settings.reset")}</Text>
         </Pressable>
       </View>
       {settings.status === "error" ? <Text style={styles.notice}>{settings.error}</Text> : null}
@@ -137,7 +144,7 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
 export function contributeTimelineSettings(client: PluginClientContext): () => void {
   return client.addSettingsScreen({
     id: "timeline-style",
-    title: "时间线样式",
+    title: messages.message("settings.title"),
     icon: "SlidersHorizontal",
     Component: TimelineSettingsScreen,
   });

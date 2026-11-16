@@ -111,9 +111,12 @@ function toolDetail(name: string, input: Record<string, unknown>, output?: strin
         ...(output === undefined ? {} : { result: output }),
       };
     case "todo_write":
-      return { type: "plain_text", label: "Update tasks", icon: "sparkles" };
+      // The protocol has no todo or question detail type, and inventing one
+      // would break the shape the host validates. These two tools carry their
+      // own input, so the row is derived from the tool name on the client.
+      return { type: "unknown", input: input as unknown as JsonValue, output: (output ?? null) as JsonValue };
     case "ask_user_question":
-      return { type: "plain_text", label: "Asked the user", icon: "sparkles" };
+      return { type: "unknown", input: input as unknown as JsonValue, output: (output ?? null) as JsonValue };
     case "exit_plan_mode":
       // Paseo renders this as the readable plan card, and its own Codex adapter
       // emits the same item next to the approval buttons. The plan has to be
@@ -123,7 +126,9 @@ function toolDetail(name: string, input: Record<string, unknown>, output?: strin
       const childSessionId = childSessionIdOf(output);
       return {
         type: "sub_agent",
-        subAgentType: "Sub-agent",
+        // Drawn by the host as written, and the daemon cannot see the app
+        // language, so both languages are spelled out.
+        subAgentType: "Sub-agent / 子代理",
         ...(stringField(input, "description") === undefined
           ? {}
           : { description: stringField(input, "description") as string }),

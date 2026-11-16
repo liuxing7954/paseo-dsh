@@ -1,7 +1,7 @@
 {
   "name": "paseo-dsh",
-  "version": "0.2.20",
-  "description": "DeepSeek Harness (dsh) as a native Paseo provider: question cards, plan mode, thinking levels, steering, images and a real slash menu. 把 DeepSeek Harness 接成 Paseo 原生 provider。",
+  "version": "0.2.21",
+  "description": "DeepSeek Harness (dsh) as a native Paseo provider: question cards, plan mode, thinking levels, steering, images, a slash menu, permissions and presets.",
   "keywords": [
     "paseo",
     "paseo-plugin",
@@ -32,6 +32,7 @@
     "icon.svg",
     "README.md",
     "OVERVIEW.md",
+    "OVERVIEW.zh-CN.md",
     "LICENSE",
     "THIRD-PARTY-NOTICES.md",
     "index.client.tsx",
@@ -39,13 +40,14 @@
   ],
   "scripts": {
     "generate": "node scripts/generate-bridge-assets.mjs",
-    "prepack": "node scripts/generate-bridge-assets.mjs",
+    "prepack": "node scripts/generate-bridge-assets.mjs && node scripts/check-locales.mjs",
     "typecheck": "tsc --noEmit",
     "test:process": "node --test test/process.test.cjs",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs && node scripts/check-locales.mjs",
+    "check:locales": "node scripts/check-locales.mjs"
   },
   "peerDependencies": {
-    "@getpaseo/plugin": ">=0.9.2"
+    "@getpaseo/plugin": ">=0.13.0"
   },
   "peerDependenciesMeta": {
     "@getpaseo/plugin": {
@@ -53,7 +55,7 @@
     }
   },
   "devDependencies": {
-    "@getpaseo/plugin": "0.9.2",
+    "@getpaseo/plugin": "^0.16.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.3.0",
     "typescript": "^5.9.3",

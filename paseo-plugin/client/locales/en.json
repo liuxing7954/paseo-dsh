@@ -1,0 +1,123 @@
+{
+  "timeline": {
+    "thinking": {
+      "verb": "Thought",
+      "live": "Thinking…",
+      "done": "Thought"
+    },
+    "status": {
+      "running": "Running",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "done": "Done"
+    },
+    "row": {
+      "running": "Running",
+      "imagePreview": "Image preview",
+      "loadingImage": "Loading image…",
+      "loadAnyway": "Load anyway",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Copy failed",
+      "fullscreen": "Fullscreen",
+      "exitFullscreen": "Exit fullscreen",
+      "close": "Close",
+      "wrap": "Wrap",
+      "noWrap": "No wrap"
+    },
+    "tool": {
+      "command": "Command",
+      "image": "Image",
+      "read": "Read",
+      "write": "Write",
+      "edit": "Edit",
+      "search": "Search",
+      "webSearch": "Web search",
+      "fetch": "Fetch",
+      "browser": "Browser",
+      "code": "Code",
+      "tasks": "Tasks",
+      "question": "Asked"
+    },
+    "browser": {
+      "open": "Open",
+      "click": "Click",
+      "type": "Type",
+      "snapshot": "Snapshot",
+      "scroll": "Scroll",
+      "navigate": "Navigate",
+      "wait": "Wait",
+      "close": "Close",
+      "run": "Run",
+      "find": "Find"
+    },
+    "image": {
+      "unsupportedFormat": "Unsupported image format",
+      "notFile": "Not a file",
+      "tooLarge": "Large image ({{size}} MB, above the {{limit}} MB preview limit)",
+      "tooLargeHard": "Image is above the 64 MB hard limit and cannot be previewed",
+      "unreadable": "Could not read the image",
+      "detail": "{{message}}"
+    }
+  },
+  "streamStats": {
+    "turnsSteps": "{{turns}} turns · {{steps}} steps",
+    "firstToken": "First token {{latency}}",
+    "contextPercent": "Context {{percent}}%",
+    "cacheHit": "Cache hit {{percent}}%",
+    "expand": "Expand answer stats",
+    "collapse": "Collapse answer stats",
+    "contextLine": "Context  {{used}} / {{max}}  {{bar}}  {{percent}}%",
+    "tokensLine": "Tokens  {{parts}}",
+    "tokenInput": "in {{tokens}}",
+    "tokenCached": "cached {{tokens}}",
+    "tokenOutput": "out {{tokens}}",
+    "routeLine": "Route  {{route}}",
+    "routeWithThinking": "Route  {{route}} · thinking {{option}}",
+    "toolsLine": "Tools  {{calls}}{{duration}}",
+    "tools_one": "{{count}} call",
+    "tools_other": "{{count}} calls"
+  },
+  "settings": {
+    "title": "Timeline style",
+    "intro": "Tool row spacing, row height and command drawer height. Changes apply as soon as you save, without restarting Paseo.",
+    "save": "Save",
+    "saving": "Saving…",
+    "reset": "Restore defaults",
+    "saved": "Saved",
+    "saveFailed": "Could not save",
+    "resetDone": "Defaults restored",
+    "resetFailed": "Could not restore defaults",
+    "invalidNumber": "“{{label}}” is not a valid number",
+    "field": {
+      "toolRowMarginY": {
+        "label": "Extra spacing between tools",
+        "hint": "Added on top of the host's fixed 16px. Negative values are allowed: 8 → about 24px, -8 → about 8px, -16 → about 0px. Range -16 to 24."
+      },
+      "liveReasoningRowMarginY": {
+        "label": "Extra spacing for the streaming thinking row",
+        "hint": "Applies only to the thinking row that is still streaming. Default 8; negative values can overlap."
+      },
+      "toolRowPaddingY": {
+        "label": "Tool row vertical padding (inside the row)",
+        "hint": "Changes only the padding inside a row, not the gap between tools. To tighten the gap, edit “Extra spacing between tools” above. Range 0 to 12."
+      },
+      "toolRowMinHeight": {
+        "label": "Tool row minimum height",
+        "hint": "How tall a row is at minimum; with padding 0 it can shrink to about the icon height (about 17px). Range 12 to 64."
+      },
+      "toolRowGap": {
+        "label": "Horizontal gap between icon and text",
+        "hint": "Between the icon, the verb and the target. Range 0 to 24."
+      },
+      "commandMaxHeightRatio": {
+        "label": "Command block maximum height (share of the window)",
+        "hint": "0.25 means at most a quarter of the window height; beyond that the command block scrolls internally and the output area stays visible. Range 0.1 to 0.6."
+      },
+      "commandMinHeight": {
+        "label": "Command block minimum height cap",
+        "hint": "The height the command block keeps even in a very small window, in pixels. Range 60 to 360."
+      }
+    }
+  }
+}

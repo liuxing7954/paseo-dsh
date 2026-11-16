@@ -1,4 +1,6 @@
 import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plugin/client";
+import { useTranslation } from "@getpaseo/plugin/client";
+import { messages } from "./messages";
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
@@ -54,34 +56,6 @@ function contextRatio(data: StreamStats): number | undefined {
   return Math.max(0, Math.min(1, data.contextUsed / data.contextMax));
 }
 
-function contextLine(data: StreamStats): string | undefined {
-  const ratio = contextRatio(data);
-  if (ratio === undefined) return undefined;
-  const filled = Math.round(ratio * 10);
-  const bar = `${"█".repeat(filled)}${"░".repeat(10 - filled)}`;
-  return `上下文  ${formatNumber(data.contextUsed ?? 0)} / ${formatNumber(data.contextMax ?? 0)}  ${bar}  ${Math.round(ratio * 100)}%`;
-}
-
-function tokensLine(data: StreamStats): string | undefined {
-  const parts: string[] = [];
-  if (data.inputTokens !== undefined) parts.push(`输入 ${formatNumber(data.inputTokens)}`);
-  if (data.cachedInputTokens !== undefined) parts.push(`缓存 ${formatNumber(data.cachedInputTokens)}`);
-  if (data.outputTokens !== undefined) parts.push(`输出 ${formatNumber(data.outputTokens)}`);
-  return parts.length === 0 ? undefined : `Tokens  ${parts.join(" · ")}`;
-}
-
-function routeLine(data: StreamStats): string | undefined {
-  if (data.provider === undefined && data.model === undefined) return undefined;
-  const route = [data.provider, data.model].filter((part) => part !== undefined).join(" / ");
-  return `路由  ${route}${data.thinkingOption === undefined ? "" : ` · 思考 ${data.thinkingOption}`}`;
-}
-
-function toolsLine(data: StreamStats): string | undefined {
-  if (data.toolCalls === undefined || data.toolCalls <= 0) return undefined;
-  const duration = data.toolMs === undefined ? "" : ` · ${formatLatency(data.toolMs)}`;
-  return `工具  ${data.toolCalls} 次${duration}`;
-}
-
 /** One compact line under an answer; tap to expand the full picture. */
 function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamStats>) {
   const [open, setOpen] = useState(false);
@@ -91,6 +65,47 @@ function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamS
   /** The lift the DOM currently carries; the next measurement discounts it. */
   const appliedLift = useRef(0);
   const data = item.data;
+  const { t } = useTranslation(messages);
+  const line = {
+    context(): string | undefined {
+      const ratio = contextRatio(data);
+      if (ratio === undefined) return undefined;
+      const filled = Math.round(ratio * 10);
+      const bar = `${"█".repeat(filled)}${"░".repeat(10 - filled)}`;
+      return t("streamStats.contextLine", {
+        used: formatNumber(data.contextUsed ?? 0),
+        max: formatNumber(data.contextMax ?? 0),
+        bar,
+        percent: Math.round(ratio * 100),
+      });
+    },
+    tokens(): string | undefined {
+      const parts: string[] = [];
+      if (data.inputTokens !== undefined) {
+        parts.push(t("streamStats.tokenInput", { tokens: formatNumber(data.inputTokens) }));
+      }
+      if (data.cachedInputTokens !== undefined) {
+        parts.push(t("streamStats.tokenCached", { tokens: formatNumber(data.cachedInputTokens) }));
+      }
+      if (data.outputTokens !== undefined) {
+        parts.push(t("streamStats.tokenOutput", { tokens: formatNumber(data.outputTokens) }));
+      }
+      return parts.length === 0 ? undefined : t("streamStats.tokensLine", { parts: parts.join(" · ") });
+    },
+    route(): string | undefined {
+      if (data.provider === undefined && data.model === undefined) return undefined;
+      const route = [data.provider, data.model].filter((part) => part !== undefined).join(" / ");
+      return data.thinkingOption === undefined
+        ? t("streamStats.routeLine", { route })
+        : t("streamStats.routeWithThinking", { route, option: data.thinkingOption });
+    },
+    tools(): string | undefined {
+      if (data.toolCalls === undefined || data.toolCalls <= 0) return undefined;
+      const calls = t("streamStats.tools", { count: data.toolCalls });
+      const duration = data.toolMs === undefined ? "" : ` · ${formatLatency(data.toolMs)}`;
+      return t("streamStats.toolsLine", { calls, duration });
+    },
+  };
 
   // The ref must describe the margin the DOM actually carries, not the one a
   // pending render is about to apply.
@@ -149,23 +164,23 @@ function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamS
   const ratio = contextRatio(data);
   const segments: Array<{ text: string; color: string }> = [];
   if (data.turns !== undefined && data.steps !== undefined) {
-    segments.push({ text: `${data.turns} 轮 ${data.steps} 步`, color: muted });
+    segments.push({ text: t("streamStats.turnsSteps", { turns: data.turns, steps: data.steps }), color: muted });
   }
   if (data.firstTokenMs !== undefined) {
-    segments.push({ text: `首字 ${formatLatency(data.firstTokenMs)}`, color: muted });
+    segments.push({ text: t("streamStats.firstToken", { latency: formatLatency(data.firstTokenMs) }), color: muted });
   }
   if (data.tokensPerSecond !== undefined) {
     segments.push({ text: `${Math.round(data.tokensPerSecond)} tok/s`, color: muted });
   }
   if (ratio !== undefined) {
-    segments.push({ text: `上下文 ${Math.round(ratio * 100)}%`, color: muted });
+    segments.push({ text: t("streamStats.contextPercent", { percent: Math.round(ratio * 100) }), color: muted });
   }
   if (data.cacheHit !== undefined) {
-    segments.push({ text: `缓存命中 ${Math.round(data.cacheHit * 100)}%`, color: muted });
+    segments.push({ text: t("streamStats.cacheHit", { percent: Math.round(data.cacheHit * 100) }), color: muted });
   }
   if (segments.length === 0) return null;
 
-  const details = [contextLine(data), tokensLine(data), routeLine(data), toolsLine(data)].filter(
+  const details = [line.context(), line.tokens(), line.route(), line.tools()].filter(
     (line): line is string => line !== undefined,
   );
 
@@ -173,7 +188,7 @@ function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamS
     <Pressable
       ref={rowRef}
       accessibilityRole="button"
-      accessibilityLabel={open ? "收起回答统计" : "展开回答统计"}
+      accessibilityLabel={open ? t("streamStats.collapse") : t("streamStats.expand")}
       onPress={() => setOpen((value) => !value)}
       style={{ alignSelf: "flex-start", marginTop: lift, marginBottom: 0, paddingLeft: inset }}
     >
