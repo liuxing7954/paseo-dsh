@@ -12,6 +12,13 @@ DSH 侧是一个 profile bundle。
 [npmjs.com/package/paseo-dsh](https://www.npmjs.com/package/paseo-dsh) · 装完只差
 [填模型路由](#安装推荐一行)，详见下方。
 
+## 界面
+
+一次完整会话（点开看原图）：每一步思考和每个工具调用都逐条可展开，答案下方是这一轮的
+首字延迟、上下文占用与缓存命中，composer 里是**模型 / 思考档位 / Build·Plan / 权限预设**。
+
+![Paseo 里的 DSH 会话：思考行、命令与看图工具、单轮统计，以及 composer 的模型与思考档位](docs/assets/paseo-dsh-overview.png)
+
 | 能力 | ACP 接入 | 本项目 |
 | --- | --- | --- |
 | `ask_user_question` 提问卡片 | ❌ 模型看不到该工具，也没有应答方 | ✅ Paseo 原生卡片，步进式选项，一次提交 |

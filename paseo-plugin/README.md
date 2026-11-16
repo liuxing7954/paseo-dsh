@@ -46,6 +46,10 @@ live in the main repository: **https://github.com/liuxing7954/paseo-dsh**
 
 Requires Paseo ≥ 0.9.2 and the official `dsh` on the daemon's `PATH`.
 
+## What it looks like
+
+![A DSH session in Paseo: thinking rows, a shell and an image tool, per-turn stats, and the model and thinking controls in the composer](https://raw.githubusercontent.com/liuxing7954/paseo-dsh/main/docs/assets/paseo-dsh-overview.png)
+
 ## Versioning
 
 `major.minor` tracks the DSH line this plugin targets — `0.2.x` of this plugin is

@@ -15,6 +15,14 @@ profile bundle on the DSH side.
 install the only step left is [your model route](#install-one-line), described
 below.
 
+## What it looks like
+
+One complete session (click for full size): every thinking step and tool call expands
+inline, the row under the answer carries this turn's first-token latency, context use and
+cache hits, and the composer holds **model / thinking level / Build·Plan / permissions**.
+
+![A DSH session in Paseo: thinking rows, a shell and an image tool, per-turn stats, and the model and thinking controls in the composer](docs/assets/paseo-dsh-overview.png)
+
 | Capability | Over ACP | This project |
 | --- | --- | --- |
 | `ask_user_question` cards | ❌ the model never sees the tool and nothing can answer it | ✅ native Paseo card, step through every question, one submission |
