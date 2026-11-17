@@ -3,11 +3,13 @@
  *
  * The surface is the shipped SDK contract (`initialize`, `session/prompt`,
  * `shutdown` plus the `session.event` / `session.status` notifications) with
- * three additions on top:
+ * Paseo-specific additions on top, among them:
  *
  * - `paseo/plan/get` and `paseo/plan/set` drive the mounted plan-mode service.
  * - `paseo/config/set` mutates the live per-agent model selection, which is how
  *   the thinking-effort control takes effect without restarting the runtime.
+ * - `paseo/activity` reports the DSH work that releasing a session's runtime
+ *   would end, so Paseo's idle cleanup can wait for it (see `activity.js`).
  * - `paseo/question` is a *server -> client request*: the bridge sends it when
  *   the model calls the user-question tool and waits for the answer batch.
  *
@@ -19,6 +21,7 @@ import { brandString } from '@deepseek-ai/dsh-brand';
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { admitEncodedImages } from '@deepseek-ai/dsh-attachment';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
+import { runtimeActivity } from './activity.js';
 import { mountLaunchContext } from './launch.js';
 import { Subsessions } from './subsessions.js';
 
@@ -474,6 +477,33 @@ export class PaseoHarnessServer {
     const session = this.subsessions.session(sessionId);
     if (!this.owns(sessionId) || session?.header.origin !== 'subagent') throw new Error(`unknown native child session: ${sessionId}`);
     return session;
+  }
+
+  /**
+   * Report the DSH work that releasing one session's runtime would end.
+   *
+   * A root is this bridge's primary session; releasing it shuts the process
+   * down, so every live agent is in scope. A native child is released by
+   * draining it, so only its own subtree is. Any other id is not ours to answer
+   * for, and failing lets Paseo keep the runtime rather than guess.
+   */
+  async activity(params) {
+    const sessionId = params?.sessionId;
+    if (typeof sessionId !== 'string' || sessionId === '') {
+      throw new TypeError('paseo/activity requires sessionId');
+    }
+    const child = this.subsessions.session(sessionId)?.header.origin === 'subagent';
+    if (child) this.requireChild(sessionId);
+    else if (sessionId !== this.primarySessionId) throw new Error(`unknown session: ${sessionId}`);
+    const activity = await runtimeActivity(this.ctx, {
+      sessionId,
+      wholeProcess: !child,
+      parentOf: (id) => {
+        const parent = this.subsessions.session(id)?.header.parentSession;
+        return parent === undefined ? undefined : String(parent);
+      },
+    });
+    return { activity };
   }
 
   async closeChild(params) {
@@ -1162,6 +1192,8 @@ export class PaseoHarnessServer {
         return this.cancel(params);
       case 'session/close':
         return this.closeChild(params);
+      case 'paseo/activity':
+        return this.activity(params);
       case 'paseo/catalog':
         return this.catalog();
       case 'paseo/commands':
