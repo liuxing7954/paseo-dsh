@@ -19,12 +19,26 @@ import { translateForLabel, useTranslation } from "./i18n";
 import { FailedRow, guard, guardAsync, report, withPluginBoundary } from "./guard";
 import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import * as ReactNative from "react-native";
-import { Modal, Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import {
+  Animated,
+  Easing,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
-// The plugin SDK ships partial react-native types; the host runtime still
-// provides Animated/Easing, so reach for them through the module object.
-const RNAnimated = ReactNative as unknown as {
+// Import react-native by name only. A namespace import becomes an interop
+// copy, and Paseo makes plugin interop copies eager for Hermes, so the copy
+// reads every react-native export as soon as the bundle runs. On iOS that
+// loads modules a release build does not carry, and Metro reports their load
+// error as fatal before `contribute()` — and before any guard — can run.
+const RNAnimated = { Animated, Easing, StyleSheet } as unknown as {
   Animated: {
     Value: new (value: number) => { interpolate(config: { inputRange: number[]; outputRange: number[] }): unknown };
     View: import("react").ComponentType<{ style?: unknown; accessibilityLabel?: string; accessibilityRole?: string }>;
@@ -36,14 +50,12 @@ const RNAnimated = ReactNative as unknown as {
   StyleSheet: { create<T>(styles: T): T };
 };
 const AnimatedView = RNAnimated.Animated.View;
-const ImageView = (ReactNative as unknown as {
-  Image: import("react").ComponentType<{
-    source: { uri: string };
-    resizeMode?: string;
-    style?: unknown;
-    accessibilityLabel?: string;
-  }>;
-}).Image;
+const ImageView = Image as import("react").ComponentType<{
+  source: { uri: string };
+  resizeMode?: string;
+  style?: unknown;
+  accessibilityLabel?: string;
+}>;
 
 import { z } from "zod";
 import { imagePreviewRpc, type ImageErrorCode } from "../shared/image-preview";

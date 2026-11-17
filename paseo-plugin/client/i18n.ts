@@ -1,4 +1,4 @@
-import * as paseo from "@getpaseo/plugin/client";
+import { useTranslation as hostUseTranslationImport } from "@getpaseo/plugin/client";
 import { useCallback } from "react";
 import { Platform } from "react-native";
 import { messages } from "./messages";
@@ -83,9 +83,9 @@ function useLocalTranslation() {
   return { locale, t };
 }
 
-const hostUseTranslation = (paseo as unknown as {
-  useTranslation?: (resources: unknown) => { locale: string; t: unknown };
-}).useTranslation;
+const hostUseTranslation = hostUseTranslationImport as unknown as
+  | ((resources: unknown) => { locale: string; t: unknown })
+  | undefined;
 
 function useHostTranslation() {
   if (hostUseTranslation === undefined) {

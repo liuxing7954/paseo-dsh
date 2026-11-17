@@ -10,6 +10,9 @@ declare module "react-native" {
   export const ScrollView: any;
   export const Modal: any;
   export const Image: any;
+  export const Animated: any;
+  export const Easing: any;
+  export const StyleSheet: any;
   export const useWindowDimensions: () => { width: number; height: number };
   export const TextInput: any;
   export const Switch: any;

@@ -1,4 +1,4 @@
-import * as paseo from "@getpaseo/plugin/client";
+import { defineTranslations } from "@getpaseo/plugin/client";
 import type { PluginTranslations } from "@getpaseo/plugin/client";
 import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
@@ -20,9 +20,11 @@ type Catalog = typeof en;
 
 const resources = { en, "zh-CN": zhCN } as const;
 
-const define = (paseo as unknown as {
-  defineTranslations?: (input: { resources: unknown }) => PluginTranslations<Catalog>;
-}).defineTranslations;
+// A client that predates the i18n API has no such export; the compiled bundle
+// then reads `undefined` here instead of throwing at module link time.
+const define = defineTranslations as unknown as
+  | ((input: { resources: unknown }) => PluginTranslations<Catalog>)
+  | undefined;
 
 function english(key: string): string {
   let node: unknown = en;
