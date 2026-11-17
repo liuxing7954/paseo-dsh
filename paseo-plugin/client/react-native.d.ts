@@ -11,5 +11,8 @@ declare module "react-native" {
   export const Modal: any;
   export const Image: any;
   export const useWindowDimensions: () => { width: number; height: number };
+  export const TextInput: any;
+  export const Switch: any;
+  export const ActivityIndicator: any;
   export const Platform: { OS: "ios" | "android" | "web" | "windows" | "macos" };
 }

@@ -88,10 +88,10 @@ const clientDir = join(root, "client");
 for (const file of readdirSync(clientDir)) {
   if (!/\.tsx?$/.test(file)) continue;
   const source = readFileSync(join(clientDir, file), "utf8");
-  for (const match of source.matchAll(/[mt]\(\s*"((?:timeline|streamStats|settings)\.[^"]+)"/g)) {
+  for (const match of source.matchAll(/[mt]\(\s*"((?:timeline|streamStats|settings|plugins)\.[^"]+)"/g)) {
     used.add(match[1]);
   }
-  for (const match of source.matchAll(/"((?:timeline|streamStats|settings)\.[a-zA-Z.]+)"/g)) {
+  for (const match of source.matchAll(/"((?:timeline|streamStats|settings|plugins)\.[a-zA-Z.-]+)"/g)) {
     used.add(match[1]);
   }
 }

@@ -118,5 +118,89 @@
         "hint": "窗口很小时仍给命令块保留的高度（像素）。范围 60 ~ 360。"
       }
     }
+  },
+  "plugins": {
+    "header": {
+      "refresh": "刷新",
+      "refreshing": "刷新中…",
+      "checkUpdates": "检查更新",
+      "checkingUpdates": "检查中…",
+      "notice": "改动只影响新建会话；正在运行的会话保持原样。",
+      "retry": "重试",
+      "profile": "{{profile}} · {{host}}"
+    },
+    "groups": {
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "dependencies": "普通依赖"
+    },
+    "badges": {
+      "official": "内置",
+      "protected": "受保护",
+      "client": "客户端界面",
+      "platformUnsupported": "当前平台不支持",
+      "missing": "缺失",
+      "updateAvailable": "可更新到 {{version}}"
+    },
+    "bundle": {
+      "dependencyNote": "普通依赖，不是 DSH bundle，不会成为 profile 层。",
+      "clientNote": "界面只在 DSH Web/Desktop 显示。",
+      "platforms": "支持的平台：{{platforms}}",
+      "remove": "卸载",
+      "confirmRemove": "确认卸载",
+      "cancel": "取消",
+      "update": "更新到 {{version}}",
+      "confirmUpdate": "确认更新到 {{version}}"
+    },
+    "install": {
+      "title": "安装 DSH 插件",
+      "hint": "只接受 npm registry 包名。安装前会检查它是否声明 dsh.bundle。",
+      "placeholder": "包名或包名@版本",
+      "check": "检查",
+      "checking": "检查中…",
+      "confirm": "确认安装",
+      "unknown": "未知包",
+      "trust": "这是第三方代码，会在每个新会话的 DSH 进程里运行。只安装你信任的包。",
+      "notBundle": "这个包没有声明 dsh.bundle，装进 profile 不会生效。"
+    },
+    "job": {
+      "installAction": "安装",
+      "removeAction": "卸载",
+      "updateAction": "更新",
+      "checkAction": "检查更新",
+      "running": "正在{{action}}…",
+      "failed": "{{action}}失败",
+      "succeeded": "{{action}}完成",
+      "failedBadge": "失败",
+      "doneBadge": "完成",
+      "updatesFound_other": "发现 {{count}} 个可更新项。"
+    },
+    "status": {
+      "loadingProfile": "正在读取 profile…"
+    },
+    "errors": {
+      "profile-unreadable": "读不到 profile 的 package.json。",
+      "profile-invalid": "profile 的 package.json 不是有效 JSON。",
+      "invalid-platform": "这个 bundle 不支持当前平台。",
+      "lock-timeout": "等待 profile 写锁超时。",
+      "invalid-name": "bundle 名称不能为空。",
+      "protected": "这个 bundle 受保护。",
+      "not-installed": "这个包没有安装。",
+      "not-a-bundle": "这个包没有声明 dsh.bundle。",
+      "invalid-spec": "只支持 npm registry 包名。",
+      "registry-unreadable": "无法解析 registry 返回的信息。",
+      "registry-invalid": "registry 没有返回有效的包信息。",
+      "already-installed": "这个包已经安装，请在列表里启用它。",
+      "not-removable": "只有 profile 依赖里的包可以卸载。",
+      "not-in-dependencies": "这个包不在 profile 依赖里。",
+      "invalid-version": "这不是有效的 registry 版本。",
+      "check-failed": "部分 bundle 检查失败。",
+      "disposed": "插件已卸载。",
+      "busy": "已有管理任务在运行。",
+      "job-missing": "任务不存在或已过期。",
+      "spawn-failed": "无法启动 dsh。",
+      "command-failed": "dsh 命令执行失败。",
+      "request-failed": "请求失败。"
+    }
   }
 }

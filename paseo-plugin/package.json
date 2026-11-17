@@ -1,6 +1,6 @@
 {
   "name": "paseo-dsh",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "description": "DeepSeek Harness (dsh) as a native Paseo provider: question cards, plan mode, thinking levels, steering, images, a slash menu, permissions and presets.",
   "keywords": [
     "paseo",
@@ -47,7 +47,7 @@
     "check:locales": "node scripts/check-locales.mjs"
   },
   "peerDependencies": {
-    "@getpaseo/plugin": ">=0.13.0"
+    "@getpaseo/plugin": ">=0.15.0"
   },
   "peerDependenciesMeta": {
     "@getpaseo/plugin": {

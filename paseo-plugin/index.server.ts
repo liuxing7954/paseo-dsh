@@ -4,6 +4,8 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { imagePreviewRpc } from "./shared/image-preview";
 import { timelineStyleSettings } from "./shared/settings";
 import { ensurePaseoProfile } from "./server/bootstrap";
+import { DshPlugins } from "./server/dsh-plugins";
+import { registerDshPluginsRpc } from "./server/dsh-plugins-rpc";
 import { createDshProvider } from "./server/provider";
 
 /**
@@ -14,6 +16,9 @@ import { createDshProvider } from "./server/provider";
  * bundle it carries (see server/bootstrap.ts). Provisioning is best-effort —
  * a filesystem failure is logged and the provider still registers, so the
  * failure surfaces as an honest error when a session tries to start `dsh`.
+ *
+ * The DSH Plugins page is registered even when provisioning fails: it opens on
+ * the profile path and shows the real error, instead of disappearing.
  */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const HARD_MAX_IMAGE_BYTES = 64 * 1024 * 1024;
@@ -93,6 +98,12 @@ export default function contribute(server: PluginServerContext) {
       };
     }
   });
+
+  const manager = new DshPlugins();
+  const disposePlugins = registerDshPluginsRpc(server, manager);
   server.registerProvider(createDshProvider());
-  return () => {};
+
+  return () => {
+    disposePlugins();
+  };
 }
