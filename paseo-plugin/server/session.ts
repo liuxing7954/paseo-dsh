@@ -35,6 +35,8 @@ import {
   type DshSessionEvent,
   type DshStatusEvent,
   type DshUsage,
+  type DshApprovalRequest,
+  type DshAssistantStream,
 } from "./dsh-process";
 import { TimelineBuilder } from "./timeline";
 
@@ -74,8 +76,8 @@ export interface DshSessionOptions {
   /** Thinking options the catalog advertises. */
   thinkingOptions: ProviderThinkingOption[];
   /**
-   * Capabilities negotiated for the parent session. Child sessions opened by
-   * DSH subagents must advertise the same set so Paseo accepts them.
+   * Capabilities negotiated for the parent session. Native child sessions may
+   * advertise only a subset of these, matching their supported controls.
    */
   capabilities: readonly string[];
   emit(event: ProviderEvent): void;
@@ -129,18 +131,33 @@ export function offersThinking(models: readonly ProviderModel[], route: DshRoute
 /** One DSH subagent child session observed through the bridge. */
 interface ChildSessionState {
   id: string;
+  parentSessionId: string;
+  mode?: "continuable" | "one-shot";
+  toolName?: string;
   timeline: TimelineBuilder;
   cwd: string;
   title?: string;
-  /** Parent tool call that spawned this child, once its result reveals it. */
+  /** Exact native spawning execution, including PTC subcall identity. */
   toolCallId?: string;
   opened: boolean;
   turnId: string | null;
   /** A terminal turn state was already reported for the current turn. */
   finished: boolean;
   /** Events seen before Paseo accepted the child session. */
-  pending: Array<{ kind: "event"; payload: DshSessionEvent } | { kind: "status"; status: string }>;
+  pending: Array<{ kind: "event"; payload: DshSessionEvent } | { kind: "status"; status: string } | { kind: "stream"; frame: DshAssistantFrame }>;
   openTimer?: ReturnType<typeof setTimeout>;
+  live?: LiveAssistantState;
+}
+
+interface LiveAssistantState {
+  attemptId: string;
+  turn: number;
+  step: number;
+  text: string;
+  emitted: string;
+  reasoning: string;
+  emittedReasoning: string;
+  timer: ReturnType<typeof setTimeout> | undefined;
 }
 
 export class DshSession {
@@ -153,6 +170,7 @@ export class DshSession {
   readonly #timeline = new TimelineBuilder();
   /** DSH subagent child sessions, keyed by their own DSH session id. */
   #children = new Map<string, ChildSessionState>();
+  #closedChildIds = new Set<string>();
   /** Parent subagent tool calls waiting for their `started subagent <id>` result. */
   #pendingSubagentCalls = new Map<string, { description?: string }>();
   /**
@@ -170,6 +188,7 @@ export class DshSession {
   #mode: string;
   #thinkingOption: string | undefined;
   #turnId: string | null = null;
+  #turnSeq = 0;
   #replaySeq = 0;
   /**
    * Live text accumulated from DSH's transient assistant-stream frames. The
@@ -220,7 +239,11 @@ export class DshSession {
         timer: ReturnType<typeof setTimeout> | undefined;
       }
     | undefined;
-  #pendingPermissions = new Map<string, (response: ProviderPermissionResponse) => void>();
+  #pendingPermissions = new Map<string, {
+    resolve(response: ProviderPermissionResponse): void;
+    sessionId: string;
+    requestId?: string;
+  }>();
   /** Slash-menu entries by name, tagging why each exists. */
   #commandKinds = new Map<string, "command" | "skill">();
   /** Current DSH permission preset name, and the ones it can switch to. */
@@ -271,9 +294,12 @@ export class DshSession {
       systemPrompt: this.#options.systemPrompt,
       toolPolicy: this.#options.toolPolicy,
       onEvent: (payload) => this.#onSessionEvent(payload),
-      onAssistantStream: (frame) => this.#onAssistantStream(frame),
+      onAssistantStream: (frame, payload) => this.#onAssistantStream(frame, payload),
+      onChild: (payload) => this.#onChildLink(payload),
       onStatus: (payload) => this.#onStatus(payload),
       onQuestion: (request) => this.#onQuestion(request),
+      onApproval: (request) => this.#onApproval(request),
+      onRequestCancelled: (requestId) => this.#cancelPermissionRequest(requestId),
       onLog: (line) => this.#options.log(line),
       onExit: (code, signal) => {
         if (this.#closed) return;
@@ -282,6 +308,14 @@ export class DshSession {
         // A dead runtime must not keep writing more of the answer; the failure
         // below is the last word on this session.
         this.#clearLive();
+        for (const item of this.#timeline.finishPending("failed")) this.#emitItem(item);
+        for (const [id] of this.#pendingPermissions) this.resolvePermission(id, { behavior: "deny", message: "Runtime exited" });
+        for (const child of this.#children.values()) {
+          clearTimeout(child.openTimer);
+          this.#finishChildDisplay(child, "failed");
+          if (child.opened) this.#options.emit({ type: "session.runtime_failed", sessionId: child.id,
+            error: { message: "DeepSeek Harness process ended" } });
+        }
         this.#options.emit({
           type: "session.runtime_failed",
           sessionId: this.id,
@@ -521,11 +555,27 @@ export class DshSession {
   }
 
   /** Accept one prompt and start its turn. */
-  async prompt(prompt: ProviderPrompt): Promise<void> {
-    // A user turn must not start with the previous answer's live buffer still
-    // attached; flush it so the two turns cannot interleave.
-    this.#flushLive();
-    this.#clearLive();
+  async prompt(prompt: ProviderPrompt, sessionId = this.id): Promise<void> {
+    if (sessionId !== this.id) return this.#promptChild(sessionId, prompt);
+    const isSteer = prompt.delivery === "steer";
+    // Paseo's steering admission requires an active turn. Refuse before touching
+    // the runtime so the host can fall back to a fresh turn without double-sending.
+    if (isSteer && this.#turnId === null) {
+      this.#options.emit({
+        type: "session.prompt_result",
+        sessionId: this.id,
+        clientMessageId: prompt.clientMessageId,
+        result: { type: "completed" },
+      });
+      return;
+    }
+    const steeredTurnId = isSteer ? this.#turnId : null;
+    if (!isSteer) {
+      // A user turn must not start with the previous answer's live buffer still
+      // attached; flush it so the two turns cannot interleave.
+      this.#flushLive();
+      this.#clearLive();
+    }
     const process = this.#require();
 
     // Last chance to land a preset that arrived while the session was opening:
@@ -555,6 +605,17 @@ export class DshSession {
     // skills share the menu but not the execution path, so branch on the kind
     // the catalog recorded rather than on the name.
     if (prompt.input.type === "command") {
+      if (isSteer && this.#commandKinds.get(prompt.input.name) === "command") {
+        // Registered DSH commands answer outside a turn; let Paseo fall back to
+        // its normal non-steer command path without mutating the timeline twice.
+        this.#options.emit({
+          type: "session.prompt_result",
+          sessionId: this.id,
+          clientMessageId: prompt.clientMessageId,
+          result: { type: "completed" },
+        });
+        return;
+      }
       const args = prompt.input.arguments ?? "";
       const line = args.trim() === "" ? `/${prompt.input.name}` : `/${prompt.input.name} ${args}`;
       // A command message has no DSH user event of its own. Anchor it at the
@@ -568,13 +629,13 @@ export class DshSession {
       } catch (error) {
         this.#options.log(`command boundary unavailable: ${messageOf(error)}`);
       }
-      this.#emitUserMessage(
-        prompt.clientMessageId,
-        line,
-        boundary === undefined ? undefined : { seq: boundary },
-      );
 
       if (this.#commandKinds.get(prompt.input.name) === "command") {
+        this.#emitUserMessage(
+          prompt.clientMessageId,
+          line,
+          boundary === undefined ? undefined : { seq: boundary },
+        );
         try {
           const result = await process.runCommand(prompt.input.name, args);
           if (result.kind === "error") throw new Error(result.text ?? `/${prompt.input.name} failed`);
@@ -594,11 +655,46 @@ export class DshSession {
 
       // A skill (or an unrecognized name): hand DSH the bare `/name` line. Its
       // skill tool injects a user-invocable skill from exactly that token.
+      if (!isSteer) {
+        this.#emitUserMessage(
+          prompt.clientMessageId,
+          line,
+          boundary === undefined ? undefined : { seq: boundary },
+        );
+      }
       try {
         const result = await process.prompt(line, [{ type: "text", text: line }], prompt.delivery);
-        this.#emitPromptAccepted(prompt.clientMessageId);
-        this.#emitRewindToken(prompt.clientMessageId, line, result.seq);
+        if (isSteer && result.disposition === "unavailable") {
+          this.#options.emit({
+            type: "session.prompt_result",
+            sessionId: this.id,
+            clientMessageId: prompt.clientMessageId,
+            result: { type: "completed" },
+          });
+          return;
+        }
+        const seq = result.seq ?? boundary;
+        if (isSteer) {
+          this.#emitUserMessage(
+            prompt.clientMessageId,
+            line,
+            seq === undefined ? undefined : { seq },
+          );
+        } else {
+          this.#emitRewindToken(prompt.clientMessageId, line, result.seq);
+        }
+        if (steeredTurnId !== null && prompt.clearPendingPermissions === true) {
+          this.#clearPendingPermissionsForSteer(this.#dshSessionId);
+        }
+        this.#emitPromptAccepted(prompt.clientMessageId, steeredTurnId);
       } catch (error) {
+        if (isSteer) {
+          this.#emitUserMessage(
+            prompt.clientMessageId,
+            line,
+            boundary === undefined ? undefined : { seq: boundary },
+          );
+        }
         this.#emitPromptFailed(prompt.clientMessageId, error);
         return;
       }
@@ -623,10 +719,10 @@ export class DshSession {
 
       // An idle auto prompt can wait for DSH to append the durable user event,
       // so publish the row once with its rewind token instead of publishing it
-      // twice. Steer and mid-turn prompts must stay optimistic: their user event
-      // may only arrive in a later turn, so show the row now and attach the token
-      // when the event (or the bridge response) supplies the seq.
-      optimistic = prompt.delivery === "steer" || this.#turnId !== null;
+      // twice. Mid-turn auto prompts stay optimistic because their user event
+      // only arrives in a later turn. Steers wait for bridge admission first so
+      // a turn-end race refusal never publishes a duplicate row before fallback.
+      optimistic = !isSteer && this.#turnId !== null;
       if (optimistic) this.#emitUserMessage(prompt.clientMessageId, label);
 
       const result = await process.prompt(
@@ -634,6 +730,15 @@ export class DshSession {
         blocks.length === 0 ? undefined : blocks,
         prompt.delivery,
       );
+      if (isSteer && result.disposition === "unavailable") {
+        this.#options.emit({
+          type: "session.prompt_result",
+          sessionId: this.id,
+          clientMessageId: prompt.clientMessageId,
+          result: { type: "completed" },
+        });
+        return;
+      }
       acceptedSeq = result.seq;
       if (!optimistic) {
         this.#emitUserMessage(
@@ -665,8 +770,11 @@ export class DshSession {
       return;
     }
 
-    this.#emitPromptAccepted(prompt.clientMessageId);
-    // A steer message was already published optimistically; re-emit the same
+    if (steeredTurnId !== null && prompt.clearPendingPermissions === true) {
+      this.#clearPendingPermissionsForSteer(this.#dshSessionId);
+    }
+    this.#emitPromptAccepted(prompt.clientMessageId, steeredTurnId);
+    // An optimistic mid-turn message was already published; re-emit the same
     // id and text so Paseo records the token without adding a second row.
     if (optimistic && acceptedSeq !== undefined) {
       this.#emitRewindToken(prompt.clientMessageId, acceptedText, acceptedSeq);
@@ -741,7 +849,16 @@ export class DshSession {
     });
   }
 
-  #emitPromptAccepted(clientMessageId: string): void {
+  #emitPromptAccepted(clientMessageId: string, steeredTurnId: string | null = null): void {
+    if (steeredTurnId !== null) {
+      this.#options.emit({
+        type: "session.prompt_result",
+        sessionId: this.id,
+        clientMessageId,
+        result: { type: "steer", turnId: steeredTurnId },
+      });
+      return;
+    }
     const turnId = this.#turnId ?? `turn:${clientMessageId}`;
     this.#options.emit({
       type: "session.prompt_result",
@@ -839,19 +956,34 @@ export class DshSession {
   }
 
   /** Answer a pending question card. */
-  resolvePermission(permissionId: string, response: ProviderPermissionResponse): void {
-    const resolve = this.#pendingPermissions.get(permissionId);
-    if (resolve === undefined) return;
+  resolvePermission(permissionId: string, response: ProviderPermissionResponse, sessionId = this.id): void {
+    const pending = this.#pendingPermissions.get(permissionId);
+    if (pending === undefined) return;
+    if (sessionId !== this.id && pending.sessionId !== sessionId) throw new Error('permission belongs to another native session');
     this.#pendingPermissions.delete(permissionId);
     this.#options.emit({ type: "session.permission_resolved", sessionId: this.id, permissionId });
-    resolve(response);
+    pending.resolve(response);
+    // Deny-and-stop: after the rejection, cancel the turn that asked. A card
+    // promoted from a child stops only that child.
+    if (response.behavior === "deny" && response.interrupt === true) {
+      const owner = pending.sessionId === this.#dshSessionId ? this.id : pending.sessionId;
+      this.interrupt(owner).catch((error: unknown) => {
+        this.#options.log(`interrupt after denial failed: ${messageOf(error)}`);
+      });
+    }
   }
 
   /**
    * Cancel the running turn. The session and its history survive, so the
    * conversation stays continuable — killing the process stranded it instead.
    */
-  async interrupt(): Promise<void> {
+  async interrupt(sessionId = this.id): Promise<void> {
+    if (sessionId !== this.id) {
+      const child = this.#requireChild(sessionId);
+      this.#finishChildDisplay(child, "canceled");
+      await this.#require().cancel(sessionId);
+      return;
+    }
     this.#turnInterrupted = true;
     this.#flushLive();
     this.#clearLive();
@@ -863,7 +995,9 @@ export class DshSession {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#usageRefreshTimer);
+    for (const [id] of this.#pendingPermissions) this.resolvePermission(id, { behavior: "deny", message: "Session closed" });
     for (const child of this.#children.values()) {
+      this.#finishChildDisplay(child, "canceled");
       if (child.openTimer !== undefined) clearTimeout(child.openTimer);
       if (child.opened) {
         this.#options.emit({ type: "session.closed", sessionId: child.id });
@@ -876,6 +1010,75 @@ export class DshSession {
     this.#flushLive();
     this.#clearLive();
     await this.#process?.shutdown();
+  }
+
+  async closeChild(sessionId: string): Promise<void> {
+    this.#requireChild(sessionId);
+    await this.#require().closeChild(sessionId);
+    // The native manager drains descendants with their parent. Close the UI
+    // views child-first too, and never shut down the shared process.
+    const close = (id: string): void => {
+      for (const child of this.#children.values()) if (child.parentSessionId === id) close(child.id);
+      const child = this.#children.get(id);
+      if (child === undefined) return;
+      clearTimeout(child.openTimer);
+      this.#finishChildDisplay(child, "canceled");
+      this.#closedChildIds.add(id);
+      this.#children.delete(id);
+      for (const [permissionId, pending] of this.#pendingPermissions) {
+        if (pending.sessionId === id) this.resolvePermission(permissionId, { behavior: "deny", message: "Subagent closed" });
+      }
+      if (child.opened) this.#options.emit({ type: "session.closed", sessionId: id });
+    };
+    close(sessionId);
+  }
+
+  #requireChild(sessionId: string): ChildSessionState {
+    const child = this.#children.get(sessionId);
+    if (child === undefined) throw new Error(`unknown native child session: ${sessionId}`);
+    return child;
+  }
+
+  async #promptChild(sessionId: string, prompt: ProviderPrompt): Promise<void> {
+    const child = this.#requireChild(sessionId);
+    if (prompt.delivery === "steer" && child.turnId === null) {
+      this.#options.emit({
+        type: "session.prompt_result",
+        sessionId,
+        clientMessageId: prompt.clientMessageId,
+        result: { type: "completed" },
+      });
+      return;
+    }
+    const steeredTurnId = prompt.delivery === "steer" ? child.turnId : null;
+    try {
+      if (prompt.input.type !== "message") throw new Error("native child sessions accept messages, not slash commands");
+      const blocks = prompt.input.content.map(toDshContent);
+      const result = await this.#require().prompt("", blocks, prompt.delivery, sessionId);
+      if (prompt.delivery === "steer" && result.disposition === "unavailable") {
+        this.#options.emit({
+          type: "session.prompt_result",
+          sessionId,
+          clientMessageId: prompt.clientMessageId,
+          result: { type: "completed" },
+        });
+        return;
+      }
+      if (steeredTurnId !== null && prompt.clearPendingPermissions === true) {
+        this.#clearPendingPermissionsForSteer(sessionId);
+      }
+      this.#options.emit({ type: "timeline.item", sessionId, item: {
+        type: "user_message", id: `user:${prompt.clientMessageId}`, clientMessageId: prompt.clientMessageId,
+        text: blocks.filter(block => block.type === "text").map(block => block.text).join("\n"),
+      } });
+      this.#options.emit({ type: "session.prompt_result", sessionId, clientMessageId: prompt.clientMessageId,
+        result: steeredTurnId !== null
+          ? { type: "steer", turnId: steeredTurnId }
+          : { type: "turn", turnId: child.turnId ?? `child:${sessionId}:${prompt.clientMessageId}` } });
+    } catch (error) {
+      this.#options.emit({ type: "session.prompt_result", sessionId, clientMessageId: prompt.clientMessageId,
+        result: { type: "failed", error: { message: messageOf(error) } } });
+    }
   }
 
   #require(): DshProcess {
@@ -898,7 +1101,7 @@ export class DshSession {
         // A later usage refresh must not rewrite the previous turn's row.
         this.#lastStats = undefined;
       }
-      const turnId = this.#turnId ?? `turn:${Date.now()}`;
+      const turnId = this.#turnId ?? this.#nextTurnId();
       this.#turnId = turnId;
       this.#options.emit({ type: "session.turn", sessionId: this.id, turnId, state: "started" });
       return;
@@ -909,16 +1112,20 @@ export class DshSession {
   /**
    * Find or create the local view of a child session.
    *
-   * A session is only treated as a child when its header names this session as
-   * the parent *and* marks it as a subagent. In DSH 0.2.1 `parentSession` also
-   * records ordinary fork lineage, so the parent link alone is not enough.
+   * Accept direct children and descendants of already observed children, only
+   * when the native header marks delegation. Ordinary conversation forks also
+   * carry parentSession, so lineage alone does not establish a subagent.
    */
   #ensureChild(meta: {
     sessionId: string;
     parentSessionId?: string;
     origin?: string;
     cwd?: string;
+    toolCallId?: string;
+    toolName?: string;
+    toolTitle?: string;
   }): ChildSessionState | undefined {
+    if (this.#closedChildIds.has(meta.sessionId)) return undefined;
     if (!this.#options.capabilities.includes("session.subsession")) {
       if (!this.#warnedNoSubsession) {
         this.#warnedNoSubsession = true;
@@ -931,11 +1138,19 @@ export class DshSession {
     const existing = this.#children.get(meta.sessionId);
     if (existing !== undefined) {
       if (meta.cwd !== undefined) existing.cwd = meta.cwd;
+      if (meta.toolCallId !== undefined) existing.toolCallId = meta.toolCallId;
+      if (meta.toolName !== undefined) existing.toolName = meta.toolName;
+      if (meta.toolTitle !== undefined && existing.title === undefined) existing.title = meta.toolTitle;
       return existing;
     }
-    if (meta.parentSessionId !== this.#dshSessionId || meta.origin !== "subagent") return undefined;
+    if (meta.origin !== "subagent" || meta.parentSessionId === undefined ||
+      (meta.parentSessionId !== this.#dshSessionId && !this.#children.has(meta.parentSessionId))) return undefined;
     const child: ChildSessionState = {
       id: meta.sessionId,
+      parentSessionId: meta.parentSessionId,
+      ...(meta.toolCallId === undefined ? {} : { toolCallId: meta.toolCallId }),
+      ...(meta.toolName === undefined ? {} : { toolName: meta.toolName }),
+      ...(meta.toolTitle === undefined ? {} : { title: meta.toolTitle }),
       timeline: new TimelineBuilder(),
       cwd: meta.cwd ?? this.#options.cwd,
       opened: false,
@@ -947,12 +1162,18 @@ export class DshSession {
     return child;
   }
 
+  #onChildLink(meta: Omit<DshStatusEvent, "status">): void {
+    const child = this.#ensureChild(meta);
+    if (child !== undefined) this.#tryOpenChild(child);
+  }
+
   #onChildSessionEvent(payload: DshSessionEvent): void {
     const child = this.#ensureChild(payload);
     if (child === undefined) return;
     const event = payload.event;
     if (event.type === "subagent/descriptor") {
       const data = isRecord(event.data) ? event.data : {};
+      if (data.mode === "continuable" || data.mode === "one-shot") child.mode = data.mode;
       const title =
         typeof data.label === "string"
           ? data.label
@@ -963,6 +1184,10 @@ export class DshSession {
     }
     if (!child.opened) {
       child.pending.push({ kind: "event", payload });
+      if (child.toolCallId !== undefined && child.mode !== undefined) {
+        this.#tryOpenChild(child);
+        return;
+      }
       this.#scheduleChildOpen(child);
       return;
     }
@@ -987,13 +1212,14 @@ export class DshSession {
     // toolCallId still beats hiding it from Paseo entirely.
     child.openTimer = setTimeout(() => {
       child.openTimer = undefined;
-      this.#tryOpenChild(child);
+      this.#tryOpenChild(child, true);
     }, 1500);
     child.openTimer.unref?.();
   }
 
-  #tryOpenChild(child: ChildSessionState): void {
+  #tryOpenChild(child: ChildSessionState, allowUnknownMode = false): void {
     if (child.opened) return;
+    if (child.toolCallId !== undefined && child.mode === undefined && !allowUnknownMode) return;
     // A subagent tool is in flight. Wait for its result to learn the call id,
     // unless the fallback timer has already fired and cleared that wait.
     if (child.toolCallId === undefined && this.#pendingSubagentCalls.size > 0 && child.openTimer !== undefined) {
@@ -1004,20 +1230,32 @@ export class DshSession {
 
   #openChild(child: ChildSessionState): void {
     if (child.opened || this.#closed) return;
+    const parent = this.#children.get(child.parentSessionId);
+    if (parent !== undefined && !parent.opened) this.#openChild(parent);
     child.opened = true;
     if (child.openTimer !== undefined) {
       clearTimeout(child.openTimer);
       child.openTimer = undefined;
     }
+    // A PTC subcall has its own semantic card; the enclosing run_code remains
+    // the program summary. The host associates children by this exact call id.
+    if (child.toolCallId !== undefined) {
+      const timeline = parent?.timeline ?? this.#timeline;
+      for (const item of timeline.subagent(child.toolCallId, child.toolName ?? "subagent", child.title, child.id)) {
+        this.#options.emit({ type: "timeline.item", sessionId: parent?.id ?? this.id, item });
+      }
+    }
     this.#options.emit({
       type: "session.opened",
       sessionId: child.id,
-      parentSessionId: this.id,
+      parentSessionId: parent?.id ?? this.id,
       ...(child.toolCallId === undefined ? {} : { toolCallId: child.toolCallId }),
       // These are the capabilities the host actually negotiated for this
       // connection. Advertising the static CAPABILITIES list here would make
       // Paseo reject the child before it is attached.
-      capabilities: [...this.#options.capabilities],
+      capabilities: this.#options.capabilities.filter(capability =>
+        ["permission", "session.subsession"].includes(capability) ||
+        (child.mode === "continuable" && ["prompt.message", "prompt.image", "prompt.steer"].includes(capability))),
       restoration: "parent",
       cwd: child.cwd,
       ...(child.title === undefined ? {} : { title: child.title, description: child.title }),
@@ -1026,7 +1264,8 @@ export class DshSession {
     child.pending = [];
     for (const item of pending) {
       if (item.kind === "event") this.#applyChildEvent(child, item.payload);
-      else this.#applyChildStatus(child, item.status);
+      else if (item.kind === "status") this.#applyChildStatus(child, item.status);
+      else this.#applyChildStream(child, item.frame);
     }
   }
 
@@ -1036,6 +1275,7 @@ export class DshSession {
     if (event.type === "turn/start") {
       this.#startChildTurn(child);
     }
+    if (event.type === "assistant/message") this.#finishChildLive(child);
     for (const item of child.timeline.consume(event)) {
       this.#options.emit({ type: "timeline.item", sessionId: child.id, item });
     }
@@ -1060,6 +1300,7 @@ export class DshSession {
       this.#startChildTurn(child);
       return;
     }
+    if (!["idle", "failed", "error", "canceled", "cancelled"].includes(status)) return;
     const state =
       status === "failed" || status === "error"
         ? "failed"
@@ -1087,6 +1328,7 @@ export class DshSession {
     // should produce a terminal turn event.
     if (child.finished) return;
     child.finished = true;
+    this.#finishChildDisplay(child, state);
     // A child can be opened after its turn already ended (late bridge event or
     // replay). Still report the terminal state so Paseo does not leave the
     // subagent stuck on "running".
@@ -1380,8 +1622,17 @@ export class DshSession {
    * Paseo append the delta live; the step's `assistant/message` then arrives as
    * the authoritative final snapshot and replaces the row in place.
    */
-  #onAssistantStream(frame: DshAssistantFrame): void {
+  #onAssistantStream(frame: DshAssistantFrame, payload?: DshAssistantStream): void {
     if (this.#closed) return;
+    if (payload !== undefined && payload.sessionId !== this.#dshSessionId) {
+      const child = this.#ensureChild(payload);
+      if (child === undefined) return;
+      if (!child.opened) {
+        child.pending.push({ kind: "stream", frame });
+        this.#scheduleChildOpen(child);
+      } else this.#applyChildStream(child, frame);
+      return;
+    }
     if (frame.type === "start") {
       this.#clearLive();
       this.#streamStats = {
@@ -1430,6 +1681,56 @@ export class DshSession {
       this.#flushLive();
     }, 40);
     live.timer.unref?.();
+  }
+
+  #applyChildStream(child: ChildSessionState, frame: DshAssistantFrame): void {
+    if (frame.type === "start") {
+      this.#finishChildLive(child);
+      child.live = { attemptId: frame.attemptId, turn: frame.turn ?? 0, step: frame.step ?? 0,
+        text: "", emitted: "", reasoning: "", emittedReasoning: "", timer: undefined };
+      return;
+    }
+    const live = child.live;
+    if (live === undefined || live.attemptId !== frame.attemptId) return;
+    if (frame.type === "end") {
+      this.#finishChildLive(child);
+      return;
+    }
+    if (typeof frame.text !== "string") return;
+    if (frame.kind === "reasoning") live.reasoning += frame.text;
+    else live.text += frame.text;
+    if (live.timer !== undefined) return;
+    live.timer = setTimeout(() => this.#flushChildLive(child), 40);
+    live.timer.unref?.();
+  }
+
+  #flushChildLive(child: ChildSessionState): void {
+    const live = child.live;
+    if (live === undefined) return;
+    clearTimeout(live.timer);
+    live.timer = undefined;
+    if (live.reasoning !== live.emittedReasoning) {
+      live.emittedReasoning = live.reasoning;
+      this.#options.emit({ type: "timeline.item", sessionId: child.id, item: {
+        type: "reasoning", id: `reasoning:${live.turn}:${live.step}`, text: live.reasoning,
+      } });
+    }
+    if (live.text !== live.emitted) {
+      live.emitted = live.text;
+      this.#options.emit({ type: "timeline.item", sessionId: child.id, item: {
+        type: "assistant_message", id: `assistant:${live.turn}:${live.step}`, text: live.text,
+      } });
+    }
+  }
+
+  #finishChildLive(child: ChildSessionState): void {
+    this.#flushChildLive(child);
+    child.live = undefined;
+  }
+
+  #finishChildDisplay(child: ChildSessionState, status: "completed" | "failed" | "canceled"): void {
+    this.#finishChildLive(child);
+    for (const item of child.timeline.finishPending(status)) this.#options.emit({ type: "timeline.item", sessionId: child.id, item });
   }
 
   /** Publish the accumulated live text as the message row's current snapshot. */
@@ -1552,7 +1853,7 @@ export class DshSession {
       } as unknown as Readonly<Record<string, JsonValue>>,
     };
 
-    return this.#openCard(permission);
+    return this.#openCard(permission, request.sessionId, request.requestId);
   }
 
   /**
@@ -1586,12 +1887,38 @@ export class DshSession {
       ],
     };
 
-    return this.#openCard(permission);
+    return this.#openCard(permission, request.sessionId, request.requestId);
   }
 
-  #openCard(permission: ProviderPermissionRequest): Promise<ProviderPermissionResponse> {
+  async #onApproval(request: DshApprovalRequest): Promise<{ behavior: "allow" | "deny" }> {
+    const response = await this.#openCard({
+      id: request.callId ?? request.requestId ?? "approval",
+      name: request.toolName, kind: "tool", title: request.toolName,
+      ...(request.reason === undefined ? {} : { description: request.reason }),
+      actions: [
+        { id: "deny", label: "Deny", behavior: "deny", variant: "danger" },
+        { id: "allow", label: "Allow once", behavior: "allow", variant: "primary" },
+      ],
+    }, request.sessionId, request.requestId);
+    return { behavior: response.behavior };
+  }
+
+  #cancelPermissionRequest(requestId: string): void {
+    for (const [id, pending] of this.#pendingPermissions) {
+      if (pending.requestId === requestId) this.resolvePermission(id, { behavior: "deny", message: "Request cancelled" });
+    }
+  }
+
+  #openCard(permission: ProviderPermissionRequest, nativeSessionId = this.#dshSessionId, requestId?: string): Promise<ProviderPermissionResponse> {
+    if (nativeSessionId !== this.#dshSessionId) {
+      const child = this.#requireChild(nativeSessionId);
+      permission = { ...permission, id: `${child.id}:${permission.id}`,
+        description: [child.title ?? "Subagent", permission.description].filter(Boolean).join(": ") };
+    }
+    // Paseo currently ignores child permission events. Promote cards to the
+    // root, retaining their native owner for responses and cancellation.
     return new Promise<ProviderPermissionResponse>((resolve) => {
-      this.#pendingPermissions.set(permission.id, resolve);
+      this.#pendingPermissions.set(permission.id, { resolve, sessionId: nativeSessionId, requestId });
       this.#options.emit({ type: "session.permission", sessionId: this.id, request: permission });
     });
   }
@@ -1606,6 +1933,23 @@ export class DshSession {
       ...(applied.reasoningEffort == null ? {} : { reasoningEffort: applied.reasoningEffort }),
     };
     this.#thinkingOption = applied.reasoningEffort ?? undefined;
+  }
+
+  #clearPendingPermissionsForSteer(nativeSessionId: string): void {
+    for (const [id, pending] of [...this.#pendingPermissions]) {
+      if (pending.sessionId === nativeSessionId) {
+        this.resolvePermission(id, {
+          behavior: "deny",
+          message: "The user answered with a message instead of approving. Their message follows.",
+        });
+      }
+    }
+  }
+
+  #nextTurnId(): string {
+    const now = Date.now();
+    this.#turnSeq = now > this.#turnSeq ? now : this.#turnSeq + 1;
+    return `turn:${this.#turnSeq}`;
   }
 }
 

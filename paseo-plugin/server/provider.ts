@@ -211,6 +211,7 @@ class DshConnection implements ProviderConnection {
   readonly capabilities: readonly string[];
   readonly #listeners = new Set<(event: ProviderEvent) => void>();
   readonly #sessions = new Map<string, DshSession>();
+  readonly #childOwners = new Map<string, DshSession>();
   #display: DisplayCatalog | undefined;
   #closed = false;
 
@@ -243,6 +244,7 @@ class DshConnection implements ProviderConnection {
     this.#closed = true;
     const sessions = [...this.#sessions.values()];
     this.#sessions.clear();
+    this.#childOwners.clear();
     await Promise.allSettled(sessions.map((session) => session.close()));
   }
 
@@ -255,35 +257,42 @@ class DshConnection implements ProviderConnection {
       case "session.open":
         return this.#open(input);
       case "session.prompt":
-        return this.#require(input.sessionId).prompt(input.prompt);
+        return this.#require(input.sessionId).prompt(input.prompt, input.sessionId);
       case "session.permission":
-        this.#require(input.sessionId).resolvePermission(input.permissionId, input.response);
+        this.#require(input.sessionId).resolvePermission(input.permissionId, input.response, input.sessionId);
         return;
       case "session.revert": {
         // The capability is conversation-only; a files/both request reaching
         // here would be a host bug and must fail loudly instead of pretending
         // the working tree was restored.
-        const session = this.#require(input.sessionId);
+        const session = this.#requireRoot(input.sessionId);
         await session.revert(input.token, input.scope);
         this.#emit({ type: "request.completed", requestId: input.requestId });
         return;
       }
       case "session.configure": {
-        const session = this.#require(input.sessionId);
+        const session = this.#requireRoot(input.sessionId);
         await session.configure(input.changes);
         this.#emit({ type: "session.config", sessionId: input.sessionId, config: session.configState() });
         this.#emit({ type: "request.completed", requestId: input.requestId });
         return;
       }
       case "session.interrupt": {
-        await this.#require(input.sessionId).interrupt();
+        await this.#require(input.sessionId).interrupt(input.sessionId);
         this.#emit({ type: "request.completed", requestId: input.requestId });
         return;
       }
       case "session.close": {
+        const owner = this.#childOwners.get(input.sessionId);
+        if (owner !== undefined) {
+          await owner.closeChild(input.sessionId);
+          this.#emit({ type: "request.completed", requestId: input.requestId });
+          return;
+        }
         const session = this.#sessions.get(input.sessionId);
         this.#sessions.delete(input.sessionId);
         await session?.close();
+        for (const [id, owner] of this.#childOwners) if (owner === session) this.#childOwners.delete(id);
         this.#emit({ type: "session.closed", sessionId: input.sessionId });
         this.#emit({ type: "request.completed", requestId: input.requestId });
         return;
@@ -384,7 +393,11 @@ class DshConnection implements ProviderConnection {
       models: display.models,
       thinkingOptions: display.thinkingOptions,
       capabilities: this.capabilities,
-      emit: (event) => this.#emit(event),
+      emit: (event) => {
+        if (event.type === "session.opened" && event.parentSessionId !== undefined) this.#childOwners.set(event.sessionId, session);
+        if (event.type === "session.closed") this.#childOwners.delete(event.sessionId);
+        this.#emit(event);
+      },
       log: (line) => {
         process.stderr.write(`[${PROVIDER_ID}] ${line}\n`);
       },
@@ -474,9 +487,14 @@ class DshConnection implements ProviderConnection {
   }
 
   #require(sessionId: string): DshSession {
-    const session = this.#sessions.get(sessionId);
+    const session = this.#sessions.get(sessionId) ?? this.#childOwners.get(sessionId);
     if (session === undefined) throw new Error(`unknown session: ${sessionId}`);
     return session;
+  }
+
+  #requireRoot(sessionId: string): DshSession {
+    if (this.#childOwners.has(sessionId)) throw new Error(`configuration and rewind are not supported on native child session: ${sessionId}`);
+    return this.#require(sessionId);
   }
 
   #emit(event: ProviderEvent): void {

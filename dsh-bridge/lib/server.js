@@ -20,6 +20,7 @@ import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { admitEncodedImages } from '@deepseek-ai/dsh-attachment';
 import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { mountLaunchContext } from './launch.js';
+import { Subsessions } from './subsessions.js';
 
 function encodedImage(block) {
   return block.type === 'image' && 'data' in block;
@@ -160,30 +161,11 @@ function withTimeout(promise, ms, label) {
 }
 
 /**
- * Identity fields every session notification carries.
- *
- * DSH 0.2.2 creates subagents as real child sessions. Their header is the only
- * stable place to learn that a session is a child and who its parent is, so
- * forward it instead of making the plugin guess from event contents.
- */
-function sessionEnvelope(session, extra = {}) {
-  const header = session.header ?? {};
-  return {
-    sessionId: String(session.id),
-    ...(header.parentSession === undefined ? {} : { parentSessionId: String(header.parentSession) }),
-    ...(header.origin === undefined ? {} : { origin: header.origin }),
-    ...(typeof header.cwd === 'string' ? { cwd: header.cwd } : {}),
-    ...extra,
-  };
-}
-
-/**
  * Reduce one DSH live assistant-stream frame to the part Paseo can render.
  *
- * Only visible text deltas are forwarded. Reasoning and tool-call deltas keep
- * their existing end-of-step presentation, so forwarding them would duplicate
- * work the durable timeline already does. Start and end frames still travel so
- * the plugin can reset its accumulator on a retry or abandonment.
+ * Text and reasoning deltas are forwarded. Tool-call deltas keep their
+ * end-of-step presentation. Start and end frames reset the accumulator on a
+ * retry or abandonment.
  */
 function liveAssistantFrame(frame) {
   if (frame.type === 'chunk') {
@@ -277,9 +259,14 @@ export class PaseoHarnessServer {
     this.shuttingDown = false;
     this.shutdownTask = undefined;
     this.llmFiber = undefined;
+    this.primarySessionId = undefined;
+    this.subsessions = new Subsessions(ctx,
+      id => id === this.primarySessionId || this.sessions.has(id) || this.sessionCreations.has(id),
+      (method, params) => this.transport.notify(method, params));
 
     this.disposers.push(
       ctx.on('session/event', (session, event) => {
+        if (!this.subsessions.owns(session)) return;
         if (event.type === 'user/message' && typeof event.data?.id === 'string') {
           const key = `${String(session.id)}:${event.data.id}`;
           const waiter = this.userMessageWaiters.get(key);
@@ -288,12 +275,13 @@ export class PaseoHarnessServer {
             waiter(event.seq);
           }
         }
-        this.transport.notify('session.event', sessionEnvelope(session, { event }));
+        this.transport.notify('session.event', this.subsessions.envelope(session, { event }));
       }),
     );
     this.disposers.push(
       ctx.on('agent/status', ({ agent, status }) => {
-        this.transport.notify('session.status', sessionEnvelope(agent.session, { status }));
+        if (!this.subsessions.owns(agent.session)) return;
+        this.transport.notify('session.status', this.subsessions.envelope(agent.session, { status }));
       }),
     );
     // Live token deltas. The durable log only carries one complete message per
@@ -301,17 +289,16 @@ export class PaseoHarnessServer {
     // finished writing it. Only sessions this bridge drives are forwarded.
     this.disposers.push(
       ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-        const sessionId = String(agent.session.id);
-        if (!this.sessions.has(sessionId)) return;
+        if (!this.subsessions.owns(agent.session)) return;
         const live = liveAssistantFrame(frame);
-        if (live !== undefined) this.transport.notify('assistant.stream', { sessionId, frame: live });
+        if (live !== undefined) this.transport.notify('assistant.stream', this.subsessions.envelope(agent.session, { frame: live }));
       }),
     );
   }
 
   /** Whether this server owns the live agent behind a session id. */
   owns(sessionId) {
-    return this.sessions.has(sessionId) || this.sessionCreations.has(sessionId);
+    return this.subsessions.owns(sessionId);
   }
 
   /**
@@ -371,6 +358,7 @@ export class PaseoHarnessServer {
     this.model = model;
     this.reasoningEffort = reasoningEffort;
     this.maxTokens = params.maxTokens;
+    this.primarySessionId = params.sessionId;
     // One bridge process serves one Paseo root. Host-level contributions survive
     // preset rebinding and child composeFrom(), while explicit tool filters hold.
     this.disposeLaunch = await mountLaunchContext(this.ctx, { ...params, cwd });
@@ -387,21 +375,60 @@ export class PaseoHarnessServer {
   /** Queue one identified prompt for a session, creating its agent on first use. */
   async prompt(params) {
     if (!this.initialized) throw new Error('paseo bridge is not initialized');
+    if (this.subsessions.session(params.sessionId)?.header.origin === 'subagent' && this.owns(params.sessionId)) {
+      const child = this.requireChild(params.sessionId);
+      const subagents = this.ctx.get('subagents');
+      if (subagents?.prompt === undefined) throw new Error('DSH subagent continuation is unavailable');
+      if (params.delivery === 'steer') {
+        const liveChild = this.ctx.agents.get(child.id);
+        if (liveChild?.status !== 'running') {
+          return { disposition: 'unavailable' };
+        }
+      }
+      // Use DSH's continuation manager so a cold child retains its recorded
+      // composition and policy. Never resume a child as an unrelated root.
+      return subagents.prompt({
+        requestId: brandString(randomUUID()),
+        parentSessionId: child.header.parentSession,
+        childSessionId: child.id,
+        mode: 'continuable',
+        delivery: params.delivery === 'steer' ? 'steer' : 'queue',
+        content: params.contentBlocks ?? [],
+      }, new AbortController().signal);
+    }
     const rec = await this.getOrCreateSession(params.sessionId);
     this.assertLiveAgent(rec, params.sessionId);
     const content = await durablePromptContent(this.ctx, params.contentBlocks ?? []);
     this.assertLiveAgent(rec, params.sessionId);
+    // A steer belongs inside a turn that is still running. If the turn ended
+    // before admission, refuse before enqueueing so the host can start a fresh
+    // turn once without waking a second turn in DSH first.
+    if (params.delivery === 'steer') {
+      const agent = rec.handle.agent;
+      if (agent.status !== 'running') {
+        return { disposition: 'unavailable' };
+      }
+      const message = createUserMessage({ content, source: { kind: 'user' } });
+      const seqPromise = this.waitForUserMessageSeq(params.sessionId, String(message.id), 100);
+      agent.steer(message);
+      const seq = await seqPromise;
+      return {
+        disposition: 'steered',
+        messageId: String(message.id),
+        ...(seq === undefined ? {} : { seq }),
+      };
+    }
     const message = createUserMessage({ content, source: { kind: 'user' } });
     // Register before enqueueing: the user/message event can be appended before
     // `followup` returns. The seq is the rewind token Paseo stores for this row.
     const seqPromise = this.waitForUserMessageSeq(params.sessionId, String(message.id), 5000);
-    // A steer belongs inside the turn already running; a plain prompt starts the
-    // next one. Without this distinction an interjection queues behind the very
-    // turn it was meant to correct.
-    if (params.delivery === 'steer') rec.handle.agent.steer(message);
-    else rec.handle.agent.followup(message);
+    rec.handle.agent.followup(message);
     const seq = await seqPromise;
-    return { messageId: String(message.id), ...(seq === undefined ? {} : { seq }) };
+    return {
+      disposition: 'started',
+      messageId: String(message.id),
+      ...(seq === undefined ? {} : { seq }),
+    };
   }
 
   /**
@@ -431,9 +458,31 @@ export class PaseoHarnessServer {
    * the conversation can continue afterwards.
    */
   async cancel(params) {
+    if (this.subsessions.session(params.sessionId)?.header.origin === 'subagent' && this.owns(params.sessionId)) {
+      const child = this.requireChild(params.sessionId);
+      const subagents = this.ctx.get('subagents');
+      if (subagents?.interrupt === undefined) throw new Error('DSH subagent interruption is unavailable');
+      subagents.interrupt(child.id, { kind: 'user', parentSessionId: child.header.parentSession });
+      return { canceled: true };
+    }
     const rec = this.requireSession(params.sessionId);
     rec.handle.agent.cancel({ kind: 'user' });
     return { canceled: true };
+  }
+
+  requireChild(sessionId) {
+    const session = this.subsessions.session(sessionId);
+    if (!this.owns(sessionId) || session?.header.origin !== 'subagent') throw new Error(`unknown native child session: ${sessionId}`);
+    return session;
+  }
+
+  async closeChild(params) {
+    const child = this.requireChild(params.sessionId);
+    const parent = this.ctx.agents.get(child.header.parentSession);
+    const subagents = this.ctx.get('subagents');
+    if (parent === undefined || subagents?.drainChildren === undefined) throw new Error('DSH subagent teardown is unavailable');
+    await subagents.drainChildren(parent, [child.id]);
+    return { closed: true };
   }
 
   /** The live session's next event seq, i.e. the boundary after its last event. */
@@ -1090,6 +1139,7 @@ export class PaseoHarnessServer {
         ? []
         : [Promise.resolve().then(() => this.llmFiber?.dispose())]),
     ]);
+    this.subsessions.dispose();
     try { await this.disposeLaunch?.(); } catch (error) { failures.push(error); }
     this.disposeLaunch = undefined;
     this.llmFiber = undefined;
@@ -1110,6 +1160,8 @@ export class PaseoHarnessServer {
         return this.prompt(params);
       case 'session/cancel':
         return this.cancel(params);
+      case 'session/close':
+        return this.closeChild(params);
       case 'paseo/catalog':
         return this.catalog();
       case 'paseo/commands':

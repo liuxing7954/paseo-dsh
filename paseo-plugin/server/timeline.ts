@@ -184,6 +184,7 @@ export class TimelineBuilder {
   #items = new Map<string, ProviderTimelineItem>();
   #toolNames = new Map<string, string>();
   #toolInputs = new Map<string, Record<string, unknown>>();
+  #delegations = new Set<string>();
 
   /**
    * Fold one DSH session event into zero or more complete Paseo item snapshots.
@@ -200,6 +201,15 @@ export class TimelineBuilder {
         return this.#toolCall(data);
       case "tool/result":
         return this.#toolResult(data);
+      case "tool/ptc-dispatch":
+        return this.#ptcSpecialResult(data);
+      case "tool/ptc-dispatch-start": {
+        const callId = stringField(data, "subCallId");
+        const name = stringField(data, "name");
+        if (callId === undefined || name === undefined || !["subagent", "subagent_fork", "workflow"].includes(name)) return [];
+        const input = parseArguments(data.arguments);
+        return this.subagent(callId, name, stringField(input, "description"));
+      }
       case "turn/end":
         return this.#turnEnd(data);
       default:
@@ -210,6 +220,35 @@ export class TimelineBuilder {
   #put(item: ProviderTimelineItem): ProviderTimelineItem[] {
     this.#items.set(item.id, item);
     return [item];
+  }
+
+  /** Native provenance also identifies custom delegation tool aliases. */
+  subagent(callId: string, name: string, description?: string, childSessionId?: string): ProviderTimelineItem[] {
+    this.#delegations.add(callId);
+    this.#toolNames.set(callId, name);
+    const input = { ...this.#toolInputs.get(callId), ...(description === undefined ? {} : { description }) };
+    this.#toolInputs.set(callId, input);
+    const previous = this.#items.get(`tool:${callId}`);
+    const detail = previous?.type === "tool_call" && previous.detail.type === "sub_agent" ? previous.detail : undefined;
+    return this.#put({
+      type: "tool_call", id: `tool:${callId}`, callId, name,
+      status: previous?.type === "tool_call" ? previous.status : "running", error: null,
+      detail: { type: "sub_agent", subAgentType: "Sub-agent / 子代理", log: detail?.log ?? "",
+        ...(description === undefined ? {} : { description }),
+        ...(childSessionId === undefined ? {} : { childSessionId }),
+      },
+    });
+  }
+
+  /** End a display's spinner on cancellation or a disconnected runtime. */
+  finishPending(status: "completed" | "failed" | "canceled"): ProviderTimelineItem[] {
+    const out: ProviderTimelineItem[] = [];
+    for (const item of this.#items.values()) {
+      if (item.type === "tool_call" && this.#delegations.has(item.callId) && item.status === "running") {
+        out.push(...this.#put({ ...item, status }));
+      }
+    }
+    return out;
   }
 
   #assistantMessage(data: Record<string, unknown>): ProviderTimelineItem[] {
@@ -271,6 +310,22 @@ export class TimelineBuilder {
     return this.#emitToolCall(callId, name, input, status === "running" ? "running" : status);
   }
 
+  /** Keep semantic cards, without flattening internal file/shell dispatches. */
+  #ptcSpecialResult(data: Record<string, unknown>): ProviderTimelineItem[] {
+    const callId = stringField(data, "subCallId");
+    if (callId === undefined) return [];
+    const name = stringField(data, "name");
+    if (name === undefined) return [];
+    const input = parseArguments(data.arguments);
+    if (!["subagent", "subagent_fork", "workflow"].includes(name) && !this.#delegations.has(callId)) return [];
+    this.#delegations.add(callId);
+    this.#toolNames.set(callId, name);
+    this.#toolInputs.set(callId, input);
+    return this.#toolResult({
+      message: { toolCallId: callId, content: data.content, isError: data.isError },
+    });
+  }
+
   #toolResult(data: Record<string, unknown>): ProviderTimelineItem[] {
     const message = isRecord(data.message) ? data.message : undefined;
     const callId = stringField(data, "toolCallId") ?? (message === undefined ? undefined : stringField(message, "toolCallId"));
@@ -287,13 +342,18 @@ export class TimelineBuilder {
         out.push(...this.#put({ type: "todo", id: `todo:${callId}`, items }));
       }
     }
+    let detail = toolDetail(this.#delegations.has(callId) ? "subagent" : name, input, output || undefined);
+    const previous = this.#items.get(`tool:${callId}`);
+    if (detail.type === "sub_agent" && previous?.type === "tool_call" && previous.detail.type === "sub_agent") {
+      detail = { ...previous.detail, ...detail };
+    }
     out.push(
       ...this.#put({
         type: "tool_call",
         id: `tool:${callId}`,
         callId,
         name,
-        detail: toolDetail(name, input, output === "" ? undefined : output),
+        detail,
         ...(failed
           ? { status: "failed" as const, error: { message: output || "tool failed" } }
           : { status: "completed" as const, error: null }),

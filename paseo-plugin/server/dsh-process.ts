@@ -2,7 +2,7 @@ import type { ProviderMcpServerConfig, ProviderToolPolicy } from "@getpaseo/plug
 /**
  * One `dsh --profile paseo` child process, speaking the bridge's stdio JSON-RPC.
  *
- * A process owns exactly one agent session. DSH pins the working directory,
+ * A process owns one root agent session and its native children. DSH pins the working directory,
  * provider, model and reasoning effort at `initialize`, so a session per
  * process is what lets Paseo run several workspaces against one provider.
  *
@@ -37,6 +37,8 @@ export interface DshAnswer {
 
 /** A server -> client question request raised by the DSH bridge. */
 export interface DshQuestionRequest {
+  requestId?: string;
+  sessionId?: string;
   callId: string | null;
   timed: boolean;
   questions: DshQuestion[];
@@ -49,6 +51,10 @@ export interface DshSessionEvent {
   parentSessionId?: string;
   origin?: string;
   cwd?: string;
+  toolCallId?: string;
+  rootToolCallId?: string;
+  toolName?: string;
+  toolTitle?: string;
   event: { type: string; [key: string]: unknown };
 }
 
@@ -60,6 +66,22 @@ export interface DshStatusEvent {
   parentSessionId?: string;
   origin?: string;
   cwd?: string;
+  toolCallId?: string;
+  rootToolCallId?: string;
+  toolName?: string;
+  toolTitle?: string;
+}
+
+export interface DshApprovalRequest {
+  requestId?: string;
+  sessionId?: string;
+  callId?: string;
+  toolName: string;
+  reason?: string;
+}
+
+export interface DshAssistantStream extends Omit<DshStatusEvent, "status"> {
+  frame: DshAssistantFrame;
 }
 
 /** One model the runtime advertises, with its adapter-owned reasoning efforts. */
@@ -129,7 +151,10 @@ export interface DshAssistantFrame {
 
 export interface DshProcessHandlers {
   onEvent(payload: DshSessionEvent): void;
-  onAssistantStream?(frame: DshAssistantFrame): void;
+  onAssistantStream?(frame: DshAssistantFrame, payload?: DshAssistantStream): void;
+  onChild?(payload: Omit<DshStatusEvent, "status">): void;
+  onApproval?(request: DshApprovalRequest): Promise<{ behavior: "allow" | "deny" }>;
+  onRequestCancelled?(requestId: string): void;
   onStatus(payload: DshStatusEvent): void;
   onQuestion(request: DshQuestionRequest): Promise<DshAnswer>;
   onLog(line: string): void;
@@ -322,12 +347,13 @@ export class DshProcess {
     text: string,
     contentBlocks?: unknown[],
     delivery?: "auto" | "steer",
-  ): Promise<{ messageId?: string; seq?: number }> {
+    sessionId = this.#options.sessionId,
+  ): Promise<{ disposition?: "started" | "steered" | "unavailable"; messageId?: string; seq?: number }> {
     return (await this.#request("session/prompt", {
-      sessionId: this.#options.sessionId,
+      sessionId,
       contentBlocks: contentBlocks ?? [{ type: "text", text }],
       ...(delivery === undefined ? {} : { delivery }),
-    })) as { messageId?: string; seq?: number };
+    })) as { disposition?: "started" | "steered" | "unavailable"; messageId?: string; seq?: number };
   }
 
   /**
@@ -350,8 +376,12 @@ export class DshProcess {
   }
 
   /** Cancel the running turn while keeping the session usable afterwards. */
-  async cancel(): Promise<void> {
-    await this.#request("session/cancel", { sessionId: this.#options.sessionId });
+  async cancel(sessionId = this.#options.sessionId): Promise<void> {
+    await this.#request("session/cancel", { sessionId });
+  }
+
+  async closeChild(sessionId: string): Promise<void> {
+    await this.#request("session/close", { sessionId });
   }
 
   /** Select plan mode and return the committed state. */
@@ -505,6 +535,7 @@ export class DshProcess {
       try {
         const params = (frame.params ?? {}) as DshQuestionRequest;
         const answer = await this.#options.onQuestion({
+          ...params,
           callId: params.callId ?? null,
           timed: params.timed === true,
           questions: params.questions ?? [],
@@ -524,11 +555,30 @@ export class DshProcess {
       this.#options.onEvent(frame.params as DshSessionEvent);
       return;
     }
+    if (method === "session.child") {
+      this.#options.onChild?.(frame.params as Omit<DshStatusEvent, "status">);
+      return;
+    }
+    if (method === "paseo/request/cancel") {
+      const params = frame.params as { requestId?: string } | undefined;
+      if (params?.requestId !== undefined) this.#options.onRequestCancelled?.(params.requestId);
+      return;
+    }
+    if (method === "paseo/approval" && id !== undefined) {
+      try {
+        const response = await this.#options.onApproval?.(frame.params as unknown as DshApprovalRequest);
+        this.#send({ jsonrpc: "2.0", id, result: response ?? { behavior: "deny" } });
+      } catch (error) {
+        this.#send({ jsonrpc: "2.0", id, error: { code: -32000, message: toError(error, "approval cancelled").message } });
+      }
+      return;
+    }
     if (method === "session.status") {
       const params = frame.params as
         | { sessionId?: string; status?: string; parentSessionId?: string; origin?: string; cwd?: string }
         | undefined;
       this.#options.onStatus({
+        ...params,
         sessionId: params?.sessionId ?? this.#options.sessionId,
         status: params?.status ?? "unknown",
         ...(params?.parentSessionId === undefined ? {} : { parentSessionId: params.parentSessionId }),
@@ -538,8 +588,8 @@ export class DshProcess {
       return;
     }
     if (method === "assistant.stream") {
-      const params = frame.params as { frame?: DshAssistantFrame } | undefined;
-      if (params?.frame !== undefined) this.#options.onAssistantStream?.(params.frame);
+      const params = frame.params as DshAssistantStream | undefined;
+      if (params?.frame !== undefined) this.#options.onAssistantStream?.(params.frame, params);
       return;
     }
     if (method !== undefined) {
