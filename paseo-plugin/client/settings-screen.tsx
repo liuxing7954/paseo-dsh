@@ -1,5 +1,7 @@
 import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useSettings, useTranslation } from "@getpaseo/plugin/client";
+import { useSettings } from "@getpaseo/plugin/client";
+import { translateForLabel, useTranslation } from "./i18n";
+import { FailedRow, guardAsync, withPluginBoundary } from "./guard";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { TextInput } from "@getpaseo/plugin/client/react-native";
@@ -10,7 +12,7 @@ import {
   type TimelineStyleKey,
   type TimelineStyleValues,
 } from "../shared/settings";
-import { messages } from "./messages";
+import { persistentLabel } from "./labels";
 
 /** Editor rows: the key order is shared, the wording comes from the catalogs. */
 const FIELDS = TIMELINE_STYLE_KEYS.map((key) => ({
@@ -21,7 +23,7 @@ const FIELDS = TIMELINE_STYLE_KEYS.map((key) => ({
 
 /** Numeric editor for the timeline row spacing and command drawer height. */
 export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const settings = useSettings(timelineStyleSettings);
   const [draft, setDraft] = useState<Partial<Record<TimelineStyleKey, string>>>({});
   const [notice, setNotice] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
           accessibilityRole="button"
           accessibilityLabel={t("settings.save")}
           disabled={settings.status !== "ready" || settings.saving}
-          onPress={() => void save()}
+          onPress={() => guardAsync("settings save", save)}
           style={styles.button}
         >
           <Text style={styles.buttonText}>{settings.saving ? t("settings.saving") : t("settings.save")}</Text>
@@ -128,7 +130,7 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
           accessibilityRole="button"
           accessibilityLabel={t("settings.reset")}
           disabled={settings.status !== "ready" || settings.saving}
-          onPress={() => void reset()}
+          onPress={() => guardAsync("settings reset", reset)}
           style={[styles.button, styles.secondary]}
         >
           <Text style={styles.secondaryText}>{t("settings.reset")}</Text>
@@ -144,8 +146,12 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
 export function contributeTimelineSettings(client: PluginClientContext): () => void {
   return client.addSettingsScreen({
     id: "timeline-style",
-    title: messages.message("settings.title"),
+    title: persistentLabel("settings.title"),
     icon: "SlidersHorizontal",
-    Component: TimelineSettingsScreen,
+    Component: withPluginBoundary<PluginSurfaceProps>(
+      "timeline settings",
+      TimelineSettingsScreen,
+      (props) => <FailedRow theme={props.theme} message={translateForLabel("settings.renderFailed")} />,
+    ),
   });
 }

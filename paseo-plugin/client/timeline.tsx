@@ -14,7 +14,9 @@ import type {
   PluginClientContext,
   PluginTimelineItemProps,
 } from "@getpaseo/plugin/client";
-import { useAgent, useRpc, useSettings, useTranslation } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, useSettings } from "@getpaseo/plugin/client";
+import { translateForLabel, useTranslation } from "./i18n";
+import { FailedRow, guard, guardAsync, report, withPluginBoundary } from "./guard";
 import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as ReactNative from "react-native";
@@ -46,7 +48,7 @@ const ImageView = (ReactNative as unknown as {
 import { z } from "zod";
 import { imagePreviewRpc, type ImageErrorCode } from "../shared/image-preview";
 import { TIMELINE_STYLE_DEFAULTS, timelineStyleSettings, type TimelineStyleValues } from "../shared/settings";
-import { messages, type BrowserVerbKey, type ToolVerb, type ToolVerbKey } from "./messages";
+import type { BrowserVerbKey, ToolVerb, ToolVerbKey } from "./messages";
 
 type Phase = "streaming" | "complete";
 type Theme = PluginTimelineItemProps<unknown>["theme"];
@@ -245,22 +247,27 @@ const runningDotPulse = Platform.OS === "web"
 
 /** The breathing accent dot that stands in for a running tool's glyph. */
 function RunningDot({ color }: { color: string }) {
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const pulseRef = useRef<{ interpolate(config: { inputRange: number[]; outputRange: number[] }): unknown } | null>(null);
   if (pulseRef.current === null) pulseRef.current = new RNAnimated.Animated.Value(0);
   const pulse = pulseRef.current;
   useEffect(() => {
     if (Platform.OS === "web") return;
-    const loop = RNAnimated.Animated.loop(
-      RNAnimated.Animated.timing(pulse, {
-        toValue: 1,
-        duration: RUNNING_DOT.periodMs,
-        easing: RNAnimated.Easing.inOut(RNAnimated.Easing.ease),
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
+    try {
+      const loop = RNAnimated.Animated.loop(
+        RNAnimated.Animated.timing(pulse, {
+          toValue: 1,
+          duration: RUNNING_DOT.periodMs,
+          easing: RNAnimated.Easing.inOut(RNAnimated.Easing.ease),
+          useNativeDriver: true,
+        }),
+      );
+      loop.start();
+      return () => loop.stop();
+    } catch (error) {
+      report("running dot animation", error);
+      return;
+    }
   }, [pulse]);
   const opacity = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, RUNNING_DOT.minOpacity, 1] });
   const shape = {
@@ -307,7 +314,7 @@ function CommandBlock({ text, theme, maxHeight }: { text: string; theme: Theme; 
 
 /** Image preview for a read_image tool call; bytes come from the daemon RPC. */
 function ImagePreview({ agentId, path, theme }: { agentId: string; path: string; theme: Theme }) {
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const cwd = useAgent(agentId, (agent) => agent.cwd) ?? "";
   const readImage = useRpc(imagePreviewRpc);
   const window = useWindowDimensions();
@@ -321,23 +328,35 @@ function ImagePreview({ agentId, path, theme }: { agentId: string; path: string;
   const load = useCallback(
     (allowLarge: boolean) => {
       setState({ status: "loading" });
-      void readImage({ cwd, path, allowLarge })
-        .then((result) => {
-          if (result.dataUri !== null) {
-            setState({ status: "ready", uri: result.dataUri });
-          } else if (result.tooLarge) {
-            setState({ status: "tooLarge", bytes: result.bytes ?? 0, limit: result.limit ?? 0 });
-          } else {
-            setState({ status: "error", code: result.errorCode ?? "unreadable", detail: result.errorDetail });
-          }
-        })
-        .catch((error: unknown) => {
-          setState({
-            status: "error",
-            code: "unreadable",
-            detail: error instanceof Error ? error.message : String(error),
-          });
+      const failed = (error: unknown) => {
+        setState({
+          status: "error",
+          code: "unreadable",
+          detail: error instanceof Error ? error.message : String(error),
         });
+      };
+      // `readImage` can throw before it returns a promise (the host may not
+      // have the RPC ready yet); that throw would escape the effect and become
+      // a fatal error, so both shapes are absorbed here.
+      try {
+        void readImage({ cwd, path, allowLarge })
+          .then((result) => {
+            if (result.dataUri !== null) {
+              setState({ status: "ready", uri: result.dataUri });
+            } else if (result.tooLarge) {
+              setState({ status: "tooLarge", bytes: result.bytes ?? 0, limit: result.limit ?? 0 });
+            } else {
+              setState({ status: "error", code: result.errorCode ?? "unreadable", detail: result.errorDetail });
+            }
+          })
+          .catch((error: unknown) => {
+            report("image preview", error);
+            failed(error);
+          });
+      } catch (error) {
+        report("image preview", error);
+        failed(error);
+      }
     },
     [cwd, path, readImage],
   );
@@ -423,12 +442,17 @@ function SheetPanel({
   children: ReactNode;
 }) {
   const toast = useToast();
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const copy = useCallback(() => {
     if (copyValue === undefined) return;
-    void copyText(copyValue)
-      .then(() => toast.show(t("timeline.row.copied")))
-      .catch(() => toast.error(t("timeline.row.copyFailed")));
+    guardAsync("copy text", async () => {
+      try {
+        await copyText(copyValue);
+        toast.show(t("timeline.row.copied"));
+      } catch {
+        toast.error(t("timeline.row.copyFailed"));
+      }
+    });
   }, [copyValue, toast, t]);
   const window = useWindowDimensions();
   const style = useTimelineStyle();
@@ -506,7 +530,7 @@ function DetailSheet({
   children: ReactNode;
 }) {
   const [full, setFull] = useState(false);
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const backdropLabel = t("timeline.row.close");
   useEffect(() => {
     if (!open) setFull(false);
@@ -546,7 +570,7 @@ function DetailSheet({
 }
 
 function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<ReasoningData>) {
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const streaming = item.data.phase === "streaming";
   const inline = layout.platform === "web";
   const [open, setOpen] = useState(false);
@@ -1275,7 +1299,7 @@ function CodeSurface({
 }) {
   const [wrap, setWrap] = useState(false);
   const toast = useToast();
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const background = sheetBackground(theme);
   const copy = useCallback(() => {
     void copyText(text)
@@ -1329,7 +1353,7 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
   const inline = layout.platform === "web";
   const window = useWindowDimensions();
   const data = item.data;
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const look = useMemo(() => toolLook(data), [data]);
   const verb = typeof look.verb === "string" ? t(look.verb) : look.verb.text;
   const content = useMemo(() => toolContent(data), [data]);
@@ -1452,7 +1476,7 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
  * dropped once it completes and the list never appears twice.
  */
 function TodoRow({ item, theme, layout }: PluginTimelineItemProps<TodoData>) {
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const inline = layout.platform === "web";
   const window = useWindowDimensions();
@@ -1526,108 +1550,126 @@ export function contributeTimeline(client: PluginClientContext): () => void {
       id: "dsh-reasoning-row",
       query: { itemType: "reasoning" },
       transform({ item, phase }) {
-        if (item.type !== "reasoning" || item.text.trim() === "") return undefined;
-        return {
-          items: [{
-            type: "plugin" as const,
-            kind: "dsh-reasoning",
-            version: 1,
-            data: { text: item.text, phase },
-          }],
-        };
+        return guard("timeline transformer dsh-reasoning", () => {
+          if (item.type !== "reasoning" || item.text.trim() === "") return undefined;
+          return {
+            items: [{
+              type: "plugin" as const,
+              kind: "dsh-reasoning",
+              version: 1,
+              data: { text: item.text, phase },
+            }],
+          };
+        }, undefined);
       },
     }),
     client.addTimelineRenderer({
       kind: "dsh-reasoning",
       version: 1,
       schema: reasoningSchema,
-      Component: ReasoningRow,
+      Component: withPluginBoundary<PluginTimelineItemProps<ReasoningData>>(
+        "dsh-reasoning",
+        ReasoningRow,
+        (props) => <FailedRow theme={props.theme} message={translateForLabel("timeline.row.renderFailed")} />,
+      ),
     }),
     client.addTimelineTransformer({
       id: "dsh-todo-row",
       query: { itemType: "todo" },
       transform({ item }) {
-        if (item.type !== "todo") return undefined;
-        const items = item.items.flatMap((entry) => {
-          const text = typeof entry.text === "string" ? entry.text : "";
-          if (text === "") return [];
-          const status = typeof entry.status === "string"
-            ? entry.status
-            : entry.completed
-              ? "completed"
-              : "pending";
-          return [{
-            text,
-            status,
-            ...(typeof entry.activeForm === "string" ? { activeForm: entry.activeForm } : {}),
-          }];
-        });
-        if (items.length === 0) return undefined;
-        return {
-          items: [{
-            type: "plugin" as const,
-            kind: "dsh-todo",
-            version: 1,
-            data: { items },
-          }],
-        };
+        return guard("timeline transformer dsh-todo", () => {
+          if (item.type !== "todo") return undefined;
+          const items = item.items.flatMap((entry) => {
+            const text = typeof entry.text === "string" ? entry.text : "";
+            if (text === "") return [];
+            const status = typeof entry.status === "string"
+              ? entry.status
+              : entry.completed
+                ? "completed"
+                : "pending";
+            return [{
+              text,
+              status,
+              ...(typeof entry.activeForm === "string" ? { activeForm: entry.activeForm } : {}),
+            }];
+          });
+          if (items.length === 0) return undefined;
+          return {
+            items: [{
+              type: "plugin" as const,
+              kind: "dsh-todo",
+              version: 1,
+              data: { items },
+            }],
+          };
+        }, undefined);
       },
     }),
     client.addTimelineRenderer({
       kind: "dsh-todo",
       version: 1,
       schema: todoSchema,
-      Component: TodoRow,
+      Component: withPluginBoundary<PluginTimelineItemProps<TodoData>>(
+        "dsh-todo",
+        TodoRow,
+        (props) => <FailedRow theme={props.theme} message={translateForLabel("timeline.row.renderFailed")} />,
+      ),
     }),
     client.addTimelineTransformer({
       id: "dsh-tool-row",
       query: { itemType: "tool_call" },
       transform({ item, phase }) {
-        if (item.type !== "tool_call") return undefined;
-        const detail = isRecord(item.detail) ? item.detail : undefined;
-        const type = stringField(detail, "type");
-        // A finished `todo_write` is drawn by the checklist row above; keeping
-        // its tool row too would show one call twice.
-        if (
-          item.name === "todo_write"
-          && item.status === "completed"
-          && todoEntries(detailInput(detail)).length > 0
-        ) {
-          return { items: [] };
-        }
-        // Keep Paseo's richer cards for semantic helpers; every other tool gets
-        // the shared row so a provider-specific name never shows up bare, and an
-        // unfamiliar tool falls back to the generic wrench row instead of the
-        // host's own styling.
-        const nativeCard = type === "sub_agent"
-          || type === "worktree_setup"
-          || type === "plan";
-        if (nativeCard) return undefined;
-        const error = item.error === null || item.error === undefined ? undefined : String(
-          isRecord(item.error) && typeof item.error.message === "string" ? item.error.message : item.error,
-        );
-        return {
-          items: [{
-            type: "plugin" as const,
-            kind: "dsh-tool",
-            version: 1,
-            data: {
-              name: item.name,
-              status: item.status,
-              ...(detail === undefined ? {} : { detail: toJson(detail) }),
-              ...(item.callId === undefined ? {} : { callId: item.callId }),
-              ...(error === undefined ? {} : { error }),
-              phase,
-            },
-          }],
-        };
+        return guard("timeline transformer dsh-tool", () => {
+          if (item.type !== "tool_call") return undefined;
+          const detail = isRecord(item.detail) ? item.detail : undefined;
+          const type = stringField(detail, "type");
+          // A finished `todo_write` is drawn by the checklist row above; keeping
+          // its tool row too would show one call twice.
+          if (
+            item.name === "todo_write"
+            && item.status === "completed"
+            && todoEntries(detailInput(detail)).length > 0
+          ) {
+            return { items: [] };
+          }
+          // Keep Paseo's richer cards for semantic helpers; every other tool gets
+          // the shared row so a provider-specific name never shows up bare, and an
+          // unfamiliar tool falls back to the generic wrench row instead of the
+          // host's own styling.
+          const nativeCard = type === "sub_agent"
+            || type === "worktree_setup"
+            || type === "plan";
+          if (nativeCard) return undefined;
+          const error = item.error === null || item.error === undefined ? undefined : String(
+            isRecord(item.error) && typeof item.error.message === "string" ? item.error.message : item.error,
+          );
+          return {
+            items: [{
+              type: "plugin" as const,
+              kind: "dsh-tool",
+              version: 1,
+              data: {
+                name: item.name,
+                status: item.status,
+                ...(detail === undefined ? {} : { detail: toJson(detail) }),
+                ...(item.callId === undefined ? {} : { callId: item.callId }),
+                ...(error === undefined ? {} : { error }),
+                phase,
+              },
+            }],
+          };
+        }, undefined);
       },
     }),
     client.addTimelineRenderer({
       kind: "dsh-tool",
       version: 1,
       schema: toolSchema,
-      Component: ToolRow,
+      Component: withPluginBoundary<PluginTimelineItemProps<ToolData>>(
+        "dsh-tool",
+        ToolRow,
+        (props) => <FailedRow theme={props.theme} message={translateForLabel("timeline.row.renderFailed")} />,
+      ),
     }),
   ];
   return () => {

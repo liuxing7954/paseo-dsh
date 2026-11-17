@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -9,8 +16,9 @@ import {
   View,
 } from "react-native";
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useRpc, useTranslation } from "@getpaseo/plugin/client";
-import { messages } from "./messages";
+import { useRpc } from "@getpaseo/plugin/client";
+import { useTranslation } from "./i18n";
+import { report } from "./guard";
 import {
   inspectSpecRpc,
   jobStatusRpc,
@@ -474,9 +482,9 @@ function BundleRow({
   );
 }
 
-export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
+function DshPluginsPageBody({ theme, host, layout }: PluginSurfaceProps) {
   const compact = layout.compact || layout.platform === "ios" || layout.platform === "android";
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const translate = t as unknown as Translate;
   const styles = useMemo(() => createStyles(theme.colors, compact), [theme.colors, compact]);
 
@@ -895,5 +903,58 @@ export function DshPluginsPage({ theme, host, layout }: PluginSurfaceProps) {
         </View>
       ))}
     </ScrollView>
+  );
+}
+
+/**
+ * A render error used to be fatal for the whole app: release Hermes hands it to
+ * RN's fatal handler, which aborts the process. Keep one malformed field or
+ * host prop from taking the sidebar and every open agent down with it.
+ */
+class SurfaceBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error): void {
+    report("dsh plugins screen", error);
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+export function DshPluginsPage(props: PluginSurfaceProps) {
+  const { t } = useTranslation();
+  return (
+    <SurfaceBoundary
+      fallback={(
+        <View
+          style={{
+            flex: 1,
+            padding: 24,
+            backgroundColor: props.theme.colors.surface0,
+          }}
+        >
+          <Text
+            style={{
+              color: props.theme.colors.statusDanger,
+              fontSize: 13,
+              lineHeight: 19,
+            }}
+          >
+            {t("plugins.errors.render")}
+          </Text>
+        </View>
+      )}
+    >
+      <DshPluginsPageBody {...props} />
+    </SurfaceBoundary>
   );
 }

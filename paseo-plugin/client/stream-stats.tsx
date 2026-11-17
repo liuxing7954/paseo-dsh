@@ -1,6 +1,6 @@
 import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plugin/client";
-import { useTranslation } from "@getpaseo/plugin/client";
-import { messages } from "./messages";
+import { translateForLabel, useTranslation } from "./i18n";
+import { FailedRow, guard, report, withPluginBoundary } from "./guard";
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
@@ -65,7 +65,7 @@ function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamS
   /** The lift the DOM currently carries; the next measurement discounts it. */
   const appliedLift = useRef(0);
   const data = item.data;
-  const { t } = useTranslation(messages);
+  const { t } = useTranslation();
   const line = {
     context(): string | undefined {
       const ratio = contextRatio(data);
@@ -123,19 +123,23 @@ function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamS
       return;
     }
     const measure = () => {
-      const found = measureFooterGeometry(rowRef.current, {
-        appliedLift: appliedLift.current,
-        gapEm: GAP_EM,
-        fallbackFontSize: FOOTER_FONT_SIZE,
-      });
-      if (found === null) {
-        // A hidden tab (zero-height row) says nothing about the layout: keep
-        // the last margin so switching back does not un-tuck the row.
-        if (rowIsLaidOut(rowRef.current)) setLift(0);
-        return;
+      try {
+        const found = measureFooterGeometry(rowRef.current, {
+          appliedLift: appliedLift.current,
+          gapEm: GAP_EM,
+          fallbackFontSize: FOOTER_FONT_SIZE,
+        });
+        if (found === null) {
+          // A hidden tab (zero-height row) says nothing about the layout: keep
+          // the last margin so switching back does not un-tuck the row.
+          if (rowIsLaidOut(rowRef.current)) setLift(0);
+          return;
+        }
+        setLift(found.lift);
+        setFontSize(found.fontSize);
+      } catch (error) {
+        report("footer measurement", error);
       }
-      setLift(found.lift);
-      setFontSize(found.fontSize);
     };
     measure();
     // The footer is not necessarily in its final place when the row mounts: it
@@ -144,7 +148,7 @@ function StreamStatsRow({ item, theme, layout }: PluginTimelineItemProps<StreamS
     // watching the containers in case it moves again (a new turn pushing this
     // one down, a theme swap, a font load).
     const retries = [80, 240, 700, 1500].map((ms) => setTimeout(measure, ms));
-    const stop = watchRow(rowRef.current, measure);
+    const stop = guard("footer watch", () => watchRow(rowRef.current, measure), undefined);
     return () => {
       for (const timer of retries) clearTimeout(timer);
       stop?.();
@@ -219,7 +223,11 @@ export function contributeStreamStats(client: PluginClientContext) {
     kind: "dsh-stream-stats",
     version: 1,
     schema: streamStatsSchema,
-    Component: StreamStatsRow,
+    Component: withPluginBoundary<PluginTimelineItemProps<StreamStats>>(
+      "dsh-stream-stats",
+      StreamStatsRow,
+      (props) => <FailedRow theme={props.theme} message={translateForLabel("timeline.row.renderFailed")} />,
+    ),
   });
   return () => {};
 }

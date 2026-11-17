@@ -23,7 +23,8 @@
       "exitFullscreen": "退出全屏",
       "close": "关闭",
       "wrap": "换行",
-      "noWrap": "不换行"
+      "noWrap": "不换行",
+      "renderFailed": "这一行渲染失败。"
     },
     "tool": {
       "command": "命令",
@@ -117,7 +118,8 @@
         "label": "命令块最小高度上限",
         "hint": "窗口很小时仍给命令块保留的高度（像素）。范围 60 ~ 360。"
       }
-    }
+    },
+    "renderFailed": "这个页面渲染失败。"
   },
   "plugins": {
     "page": {
@@ -204,7 +206,8 @@
       "job-missing": "任务不存在或已过期。",
       "spawn-failed": "无法启动 dsh。",
       "command-failed": "dsh 命令执行失败。",
-      "request-failed": "请求失败。"
+      "request-failed": "请求失败。",
+      "render": "这个页面渲染失败。重新打开试试；如果反复出现，请检查 daemon 日志。"
     }
   }
 }

@@ -23,7 +23,8 @@
       "exitFullscreen": "Exit fullscreen",
       "close": "Close",
       "wrap": "Wrap",
-      "noWrap": "No wrap"
+      "noWrap": "No wrap",
+      "renderFailed": "This row could not be rendered."
     },
     "tool": {
       "command": "Command",
@@ -118,7 +119,8 @@
         "label": "Command block minimum height cap",
         "hint": "The height the command block keeps even in a very small window, in pixels. Range 60 to 360."
       }
-    }
+    },
+    "renderFailed": "This screen could not be rendered."
   },
   "plugins": {
     "page": {
@@ -206,7 +208,8 @@
       "job-missing": "The task is no longer available.",
       "spawn-failed": "Could not start dsh.",
       "command-failed": "The dsh command failed.",
-      "request-failed": "The request failed."
+      "request-failed": "The request failed.",
+      "render": "This screen failed to render. Reopen it; if it happens again, check the daemon log."
     }
   }
 }
