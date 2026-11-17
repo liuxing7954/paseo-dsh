@@ -10,6 +10,6 @@ daemon 机器上必须已安装并登录 DeepSeek Harness，`dsh` 要在 daemon 
 
 图片是单向的。模型能收到你附上的图片，但 Paseo 的对话记录只渲染来自 `https://` Markdown 地址的图片，所以在 daemon 上生成的图片必须先发布成 URL。本地路径、`file://` URI 和 base64 data URL 都显示不出来。
 
-插件画出的每一个标签都跟随 Paseo 的应用语言：时间线行、思考行、详情抽屉、每回合统计行和时间线样式页都自带英文与简体中文两套文案，用词看应用语言而不是看 provider。在 设置 → 通用 → 语言 里切换，不用重启插件就会换词。
+插件画出的每一个标签默认跟随 Paseo 的应用语言：时间线行、思考行、详情抽屉、每回合统计行和显示设置页都自带英文与简体中文两套文案，用词看应用语言而不是看 provider。在 设置 → 通用 → 语言 里切换，不用重启插件就会换词；插件自己的显示设置里也能强制使用中文或英文，设置入口这类由宿主绘制的标签仍跟随应用语言。
 
 已知限制：每个会话一个 `dsh` 进程，所以每个 agent 都要花一个进程。重载插件或重启 daemon 会结束正在跑的回合，会话需要重新恢复。provider id 是 `deepseek-harness-native`，这样同时装了 ACP 的 `deepseek-harness` provider 时两者不会冲突。Windows 以及原生 iOS、Android 客户端未测试。

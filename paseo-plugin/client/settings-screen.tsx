@@ -1,15 +1,18 @@
 import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { useSettings } from "@getpaseo/plugin/client";
-import { translateForLabel, useTranslation } from "./i18n";
+import { setLanguageOverride, translateForLabel, useTranslation } from "./i18n";
 import { FailedRow, guardAsync, withPluginBoundary } from "./guard";
 import { SlidersIcon } from "./icons";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { TextInput } from "@getpaseo/plugin/client/react-native";
 import {
+  LANGUAGE_DEFAULTS,
   TIMELINE_STYLE_DEFAULTS,
   TIMELINE_STYLE_KEYS,
+  languageSettings,
   timelineStyleSettings,
+  type LanguageChoice,
   type TimelineStyleKey,
   type TimelineStyleValues,
 } from "../shared/settings";
@@ -22,13 +25,24 @@ const FIELDS = TIMELINE_STYLE_KEYS.map((key) => ({
   hint: `settings.field.${key}.hint` as const,
 }));
 
-/** Numeric editor for the timeline row spacing and command drawer height. */
+/** The three language choices; the catalogs own the wording. */
+const LANGUAGE_OPTIONS = [
+  { value: "auto", label: "settings.language.auto" },
+  { value: "en", label: "settings.language.en" },
+  { value: "zh-CN", label: "settings.language.zhCN" },
+] as const satisfies readonly { value: LanguageChoice; label: string }[];
+
+/** Numeric editor for the timeline row spacing and command drawer height, plus the plugin language. */
 export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const { t } = useTranslation();
   const settings = useSettings(timelineStyleSettings);
+  const language = useSettings(languageSettings);
   const [draft, setDraft] = useState<Partial<Record<TimelineStyleKey, string>>>({});
+  const [pickedLanguage, setPickedLanguage] = useState<LanguageChoice | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const current: TimelineStyleValues = settings.status === "ready" ? settings.values : TIMELINE_STYLE_DEFAULTS;
+  const currentLanguage: LanguageChoice = pickedLanguage
+    ?? (language.status === "ready" ? language.values.language : LANGUAGE_DEFAULTS.language);
   const compact = layout.compact;
 
   const styles = useMemo(
@@ -50,6 +64,21 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
         backgroundColor: theme.colors.surface1,
         fontSize: compact ? 13 : 14,
       },
+      languageRow: { flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 8 },
+      languageButton: {
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: compact ? 8 : 9,
+        backgroundColor: theme.colors.surface1,
+      },
+      languageButtonSelected: {
+        borderColor: theme.colors.accent,
+        backgroundColor: theme.colors.accent,
+      },
+      languageLabel: { color: theme.colors.foreground, fontSize: compact ? 12.5 : 13, fontWeight: "600" as const },
+      languageLabelSelected: { color: theme.colors.accentForeground },
       actions: { flexDirection: "row" as const, gap: 10, marginTop: 4 },
       button: {
         paddingHorizontal: 16,
@@ -98,17 +127,53 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     if (saved) setDraft({});
   };
 
+  const chooseLanguage = async (value: LanguageChoice) => {
+    if (language.status !== "ready" || language.saving || value === currentLanguage) return;
+    const saved = await language.save({ language: value }, language.revision);
+    if (saved) {
+      setPickedLanguage(value);
+      setLanguageOverride(value);
+      setNotice(null);
+    } else {
+      setNotice(language.saveError ?? t("settings.saveFailed"));
+    }
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{t("settings.title")}</Text>
       <Text style={styles.intro}>{t("settings.intro")}</Text>
+      <View style={styles.field}>
+        <Text style={styles.label}>{t("settings.language.label")}</Text>
+        <View style={styles.languageRow}>
+          {LANGUAGE_OPTIONS.map((option) => {
+            const selected = currentLanguage === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={t(option.label)}
+                disabled={language.status !== "ready" || language.saving}
+                onPress={() => guardAsync("language save", () => chooseLanguage(option.value))}
+                style={[styles.languageButton, selected ? styles.languageButtonSelected : null]}
+              >
+                <Text style={[styles.languageLabel, selected ? styles.languageLabelSelected : null]}>
+                  {t(option.label)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.hint}>{t("settings.language.hint")}</Text>
+      </View>
       {FIELDS.map((field) => (
         <View key={field.key} style={styles.field}>
           <Text style={styles.label}>{t(field.label)}</Text>
           <TextInput
             value={textOf(field.key)}
             onChangeText={(value: string) => edit(field.key, value)}
-            keyboardType={field.key === "toolRowMarginY" ? (Platform.OS === "web" ? "default" : "numbers-and-punctuation") : "numeric"}
+            keyboardType={field.key === "rowMarginY" ? (Platform.OS === "web" ? "default" : "numbers-and-punctuation") : "numeric"}
             autoCapitalize="none"
             autoCorrect={false}
             accessibilityLabel={t(field.label)}

@@ -593,13 +593,12 @@ function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<Reasoning
     : firstSentence(text) || t("timeline.thinking.done");
   const revealed = usePacedText(text, streaming && open);
   const spacing = useTimelineStyle();
-  // The host closes every row with a fixed 16px gap, and plugin rows resolve to
-  // that same 16px whatever their phase, so the live row can use the same tight
-  // margin as a completed one. Staying at or above -16 keeps it clear of the row
-  // above.
+  // The host closes every plugin row with the same fixed 16px gap, so the live
+  // row uses the same margin as a completed one. Staying at or above -16 keeps
+  // it clear of the row above.
   const row = {
     ...styles.row,
-    marginTop: streaming ? spacing.liveReasoningRowMarginY : spacing.toolRowMarginY,
+    marginTop: spacing.rowMarginY,
     marginBottom: 0,
     paddingVertical: spacing.toolRowPaddingY,
     minHeight: spacing.toolRowMinHeight,
@@ -1383,7 +1382,7 @@ function ToolRow({ item, theme, layout, agentId }: PluginTimelineItemProps<ToolD
   const live = data.status === "running" || data.phase === "streaming";
   const row = {
     ...styles.row,
-    marginTop: spacing.toolRowMarginY,
+    marginTop: spacing.rowMarginY,
     marginBottom: 0,
     paddingVertical: spacing.toolRowPaddingY,
     minHeight: spacing.toolRowMinHeight,
@@ -1502,7 +1501,7 @@ function TodoRow({ item, theme, layout }: PluginTimelineItemProps<TodoData>) {
   const verb = t("timeline.tool.tasks");
   const row = {
     ...styles.row,
-    marginTop: spacing.toolRowMarginY,
+    marginTop: spacing.rowMarginY,
     marginBottom: 0,
     paddingVertical: spacing.toolRowPaddingY,
     minHeight: spacing.toolRowMinHeight,

@@ -2,6 +2,7 @@ import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { guardCleanup, installFatalGuard, report } from "./client/guard";
 import { PluginsIcon } from "./client/icons";
 import { DshPluginsPage } from "./client/dsh-plugins-page";
+import { bootstrapLanguage } from "./client/language";
 import { persistentLabel } from "./client/labels";
 import { contributeStreamStats } from "./client/stream-stats";
 import { contributeTimelineSettings } from "./client/settings-screen";
@@ -9,6 +10,7 @@ import { contributeTimeline } from "./client/timeline";
 
 
 function buildContributions(client: PluginClientContext) {
+  bootstrapLanguage(client);
   const title = persistentLabel("plugins.page.title");
   const cleanups = [
     guardCleanup("stream stats", () => contributeStreamStats(client)),

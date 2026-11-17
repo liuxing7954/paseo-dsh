@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, isAbsolute, resolve } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { imagePreviewRpc } from "./shared/image-preview";
-import { timelineStyleSettings } from "./shared/settings";
+import { languageSettings, timelineStyleSettings } from "./shared/settings";
 import { ensurePaseoProfile } from "./server/bootstrap";
 import { DshPlugins } from "./server/dsh-plugins";
 import { registerDshPluginsRpc } from "./server/dsh-plugins-rpc";
@@ -49,6 +49,7 @@ export default function contribute(server: PluginServerContext) {
   }
 
   server.registerSettings(timelineStyleSettings);
+  server.registerSettings(languageSettings);
   server.handle(imagePreviewRpc, async (input) => {
     // The daemon answers with a code, never a sentence: the app picks the
     // language, and `errorDetail` carries the raw reason the operating system

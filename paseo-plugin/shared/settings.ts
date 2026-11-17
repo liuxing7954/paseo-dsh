@@ -4,37 +4,64 @@ import { z } from "zod";
 /**
  * Host-scoped presentation knobs for the DSH timeline rows and the tool drawer.
  *
- * The timeline row's own margin stacks on top of the host item spacing (Paseo
- * already puts 16px between timeline items), so negative values tighten the
- * visible gap while positive values widen it.
+ * One margin drives both the completed tool rows and the streaming thinking
+ * row. The host closes every plugin row with a fixed 16px gap, so a negative
+ * value tightens the visible gap in both phases and a positive one widens it.
+ * Keeping two knobs only let the live row drift away from every completed row.
  */
 export const timelineStyleSettings = defineSettings({
   id: "timeline-style",
   scope: "host",
-  version: 4,
-  migrate(values, fromVersion) {
+  version: 5,
+  migrate(values) {
     if (!isRecord(values)) return values;
-    const { liveToolRowMarginY: _dropped, liveRowMarginY, ...rest } = values;
-    if (fromVersion < 2) {
-      rest["liveReasoningRowMarginY"] = typeof liveRowMarginY === "number" ? liveRowMarginY : -8;
-    }
-    // Version 3 added a gap of 8px on top of the host's 16px, so a streaming
-    // thought floated 24px away from the step above it while every completed
-    // row sat 8px away. A stored 8 is that old default rather than a deliberate
-    // choice, so it moves to -8; any other stored value is left alone.
-    if (fromVersion < 4 && rest["liveReasoningRowMarginY"] === 8) {
-      rest["liveReasoningRowMarginY"] = -8;
-    }
+    const {
+      liveToolRowMarginY: _droppedLiveTool,
+      liveRowMarginY,
+      toolRowMarginY,
+      liveReasoningRowMarginY: _droppedLiveReasoning,
+      rowMarginY,
+      ...rest
+    } = values;
+    // v1-v4 kept the tool-row and streaming-row margins apart. Both sit on the
+    // same host 16px, so v5 collapses them into one knob. The tool-row value
+    // wins because it was the primary control; a v1 file that only had the live
+    // margin falls back to it, and an empty file lands on the new default.
+    const merged = typeof rowMarginY === "number"
+      ? rowMarginY
+      : typeof toolRowMarginY === "number"
+        ? toolRowMarginY
+        : typeof liveRowMarginY === "number"
+          ? liveRowMarginY
+          : -8;
+    rest["rowMarginY"] = merged;
     return rest;
   },
   schema: z.object({
-    toolRowMarginY: z.number().min(-16).max(24).default(-8),
-    liveReasoningRowMarginY: z.number().min(-16).max(24).default(-8),
+    rowMarginY: z.number().min(-16).max(24).default(-8),
     toolRowPaddingY: z.number().min(0).max(12).default(0),
     toolRowMinHeight: z.number().min(12).max(64).default(16),
     toolRowGap: z.number().min(0).max(24).default(6),
     commandMaxHeightRatio: z.number().min(0.1).max(0.6).default(0.25),
     commandMinHeight: z.number().min(60).max(360).default(120),
+  }),
+});
+
+/**
+ * The language this plugin draws its own UI in. `auto` follows the host;
+ * `en` and `zh-CN` force one of the bundled catalogs.
+ *
+ * Host-scoped on purpose: the plugin reads the choice once at load through the
+ * settings RPC, and only host-scoped settings share that server-backed store
+ * with `useSettings`. A device-scoped value would live in the client's local
+ * store, which the load-time read cannot reach.
+ */
+export const languageSettings = defineSettings({
+  id: "language",
+  scope: "host",
+  version: 1,
+  schema: z.object({
+    language: z.enum(["auto", "en", "zh-CN"]).default("auto"),
   }),
 });
 
@@ -45,14 +72,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export type TimelineStyleValues = z.output<typeof timelineStyleSettings.schema>;
 export type TimelineStyleKey = keyof TimelineStyleValues;
 
+export type LanguageValues = z.output<typeof languageSettings.schema>;
+export type LanguageChoice = LanguageValues["language"];
+
 export const TIMELINE_STYLE_DEFAULTS: TimelineStyleValues = {
-  toolRowMarginY: -8,
-  liveReasoningRowMarginY: -8,
+  rowMarginY: -8,
   toolRowPaddingY: 0,
   toolRowMinHeight: 16,
   toolRowGap: 6,
   commandMaxHeightRatio: 0.25,
   commandMinHeight: 120,
+};
+
+export const LANGUAGE_DEFAULTS: LanguageValues = {
+  language: "auto",
 };
 
 /**
@@ -61,8 +94,7 @@ export const TIMELINE_STYLE_DEFAULTS: TimelineStyleValues = {
  * contract carries keys only and the app language decides the wording.
  */
 export const TIMELINE_STYLE_KEYS = [
-  "toolRowMarginY",
-  "liveReasoningRowMarginY",
+  "rowMarginY",
   "toolRowPaddingY",
   "toolRowMinHeight",
   "toolRowGap",

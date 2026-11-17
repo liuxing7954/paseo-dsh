@@ -80,8 +80,8 @@
     "tools_other": "{{count}} calls"
   },
   "settings": {
-    "title": "Timeline style",
-    "intro": "Tool row spacing, row height and command drawer height. Changes apply as soon as you save, without restarting Paseo.",
+    "title": "Display settings",
+    "intro": "Row spacing and the language this plugin draws in. Language changes apply immediately; row spacing applies when you save.",
     "save": "Save",
     "saving": "Saving…",
     "reset": "Restore defaults",
@@ -90,18 +90,21 @@
     "resetDone": "Defaults restored",
     "resetFailed": "Could not restore defaults",
     "invalidNumber": "“{{label}}” is not a valid number",
+    "language": {
+      "label": "Language",
+      "hint": "Automatic follows Paseo's app language. A choice here overrides it for this plugin's own screens.",
+      "auto": "Automatic",
+      "en": "English",
+      "zhCN": "简体中文"
+    },
     "field": {
-      "toolRowMarginY": {
-        "label": "Extra spacing between tools",
-        "hint": "Added on top of the host's fixed 16px. Negative values are allowed: 8 → about 24px, -8 → about 8px, -16 → about 0px. Range -16 to 24."
-      },
-      "liveReasoningRowMarginY": {
-        "label": "Extra spacing for the streaming thinking row",
-        "hint": "Applies only to the thinking row that is still streaming. Added on top of the host's fixed 16px, like the control above. Default -8, the same 8px gap as completed rows. Range -16 to 24."
+      "rowMarginY": {
+        "label": "Extra spacing between rows",
+        "hint": "Added on top of the host's fixed 16px for tool rows and the streaming thinking row. Negative values are allowed: 8 → about 24px, -8 → about 8px, -16 → about 0px. Range -16 to 24."
       },
       "toolRowPaddingY": {
         "label": "Tool row vertical padding (inside the row)",
-        "hint": "Changes only the padding inside a row, not the gap between tools. To tighten the gap, edit “Extra spacing between tools” above. Range 0 to 12."
+        "hint": "Changes only the padding inside a row, not the gap between rows. To tighten the gap, edit “Extra spacing between rows” above. Range 0 to 12."
       },
       "toolRowMinHeight": {
         "label": "Tool row minimum height",
