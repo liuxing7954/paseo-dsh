@@ -46,7 +46,7 @@ What you get that the ACP boundary can't carry:
 Full documentation, the adoption guide, and 20 real defects with their fixes
 live in the main repository: **https://github.com/liuxing7954/paseo-dsh**
 
-Requires Paseo ≥ 0.15 and the official `dsh` on the daemon's `PATH`.
+Requires Paseo ≥ 0.16 and the official `dsh` on the daemon's `PATH`.
 
 ## Versioning
 
@@ -102,7 +102,7 @@ ACP 承载不了、而这里都有：
 完整文档、改造指南、以及 20 个真实缺陷的修复记录都在主仓库：
 **https://github.com/liuxing7954/paseo-dsh**
 
-需要 Paseo ≥ 0.15，且 daemon 的 `PATH` 上有官方 `dsh`。
+需要 Paseo ≥ 0.16，且 daemon 的 `PATH` 上有官方 `dsh`。
 
 ### 版本策略
 

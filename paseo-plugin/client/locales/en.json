@@ -121,6 +121,9 @@
     }
   },
   "plugins": {
+    "page": {
+      "title": "DSH Plugins"
+    },
     "header": {
       "refresh": "Refresh",
       "refreshing": "Refreshing…",
@@ -151,7 +154,8 @@
       "confirmRemove": "Confirm removal",
       "cancel": "Cancel",
       "update": "Update to {{version}}",
-      "confirmUpdate": "Confirm update to {{version}}"
+      "confirmUpdate": "Confirm update to {{version}}",
+      "platformsUnknown": "This bundle does not list support for the current platform."
     },
     "install": {
       "title": "Install a DSH plugin",

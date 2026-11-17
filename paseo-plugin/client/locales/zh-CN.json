@@ -120,6 +120,9 @@
     }
   },
   "plugins": {
+    "page": {
+      "title": "DSH 插件"
+    },
     "header": {
       "refresh": "刷新",
       "refreshing": "刷新中…",
@@ -150,7 +153,8 @@
       "confirmRemove": "确认卸载",
       "cancel": "取消",
       "update": "更新到 {{version}}",
-      "confirmUpdate": "确认更新到 {{version}}"
+      "confirmUpdate": "确认更新到 {{version}}",
+      "platformsUnknown": "这个 bundle 没有声明支持当前平台。"
     },
     "install": {
       "title": "安装 DSH 插件",

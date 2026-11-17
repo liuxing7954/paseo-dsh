@@ -68,12 +68,12 @@ async function main() {
   const plugins = new DshPlugins({ dir: profileDir, profile: "paseo", dshHome: root });
 
   const enabled = await plugins.setEnabled(bundleName, true);
-  assert.deepEqual(enabled, { changed: true, enabled: true });
+  assert.deepEqual(enabled, { ok: true, changed: true, enabled: true });
   assert.deepEqual(bundles(), ["@deepseek-ai/dsh-base", "dsh-paseo-bridge", bundleName]);
   assert.equal(fs.existsSync(lockPath), false, "successful write must release the lock");
 
   const idempotent = await plugins.setEnabled(bundleName, true);
-  assert.deepEqual(idempotent, { changed: false, enabled: true });
+  assert.deepEqual(idempotent, { ok: true, changed: false, enabled: true });
 
   // Two concurrent changes must serialize: exactly one observes a change.
   const concurrent = await Promise.all([
@@ -87,17 +87,17 @@ async function main() {
   // A stale lock from a dead process must be reclaimed.
   fs.writeFileSync(lockPath, "99999999\n");
   const reclaimed = await plugins.setEnabled(bundleName, true);
-  assert.deepEqual(reclaimed, { changed: true, enabled: true });
+  assert.deepEqual(reclaimed, { ok: true, changed: true, enabled: true });
   assert.equal(fs.existsSync(lockPath), false, "stale lock must be removed");
 
   const protectedResult = plugins.setEnabled("@deepseek-ai/dsh-base", false);
-  await assert.rejects(protectedResult, /受保护/);
+  await assert.rejects(protectedResult, /protected/);
   assert.equal(fs.existsSync(lockPath), false, "rejected write must release the lock");
 
   // A corrupt manifest must fail without rewriting it, and without leaking the lock.
   fs.writeFileSync(manifestPath, "{\n");
   const before = fs.readFileSync(manifestPath, "utf8");
-  await assert.rejects(plugins.setEnabled(bundleName, false), /不是有效 JSON/);
+  await assert.rejects(plugins.setEnabled(bundleName, false), /profile-invalid/);
   assert.equal(fs.readFileSync(manifestPath, "utf8"), before);
   assert.equal(fs.existsSync(lockPath), false, "failed parse must release the lock");
 

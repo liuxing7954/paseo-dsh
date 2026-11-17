@@ -133,6 +133,16 @@ function shortDir(dir: string): string {
   return dir;
 }
 
+function parseProfileManifest(path: string, text: string): ProfileManifest {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!isRecord(parsed)) throw new Error("not an object");
+    return parsed as ProfileManifest;
+  } catch {
+    throw new ManagerError("profile-invalid", path);
+  }
+}
+
 function readProfileManifest(dir: string): ProfileManifest {
   const path = join(dir, "package.json");
   let text: string;
@@ -141,13 +151,28 @@ function readProfileManifest(dir: string): ProfileManifest {
   } catch {
     throw new ManagerError("profile-unreadable", path);
   }
+  return parseProfileManifest(path, text);
+}
+
+/**
+ * The manifest when the profile has one, `undefined` when it does not exist yet.
+ *
+ * A profile this plugin has never provisioned has no `package.json`, and
+ * `dsh plugin` initializes it on first use. Treating that state like an
+ * unreadable file made the first install fail on a profile the page could have
+ * created. A file that exists but cannot be read or parsed still fails loudly:
+ * that one hides real damage.
+ */
+function readProfileManifestIfPresent(dir: string): ProfileManifest | undefined {
+  const path = join(dir, "package.json");
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(text);
-    if (!isRecord(parsed)) throw new Error("not an object");
-    return parsed as ProfileManifest;
-  } catch {
-    throw new ManagerError("profile-invalid", path);
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new ManagerError("profile-unreadable", path);
   }
+  return parseProfileManifest(path, text);
 }
 
 function writeProfileManifest(dir: string, manifest: ProfileManifest): void {
@@ -398,7 +423,11 @@ async function withPackageLock<T>(dir: string, action: () => Promise<T> | T): Pr
   try {
     return await action();
   } finally {
-    rmSync(lockPath, { force: true });
+    // Release only a lock this process still holds. DSH takes a dead holder's
+    // lock over, so an unconditional unlink could delete the lock its new
+    // owner had just created and let two writers into the manifest.
+    const holder = readLockPid(lockPath);
+    if (holder === undefined || holder === process.pid) rmSync(lockPath, { force: true });
   }
 }
 
@@ -714,8 +743,8 @@ export class DshPlugins {
           throw new ManagerError(inspected.errorCode ?? "command-failed", inspected.errorDetail);
         }
         const name = inspected.name ?? registryName(spec);
-        const manifest = readProfileManifest(this.dir);
-        if (dependencies(manifest)[name] !== undefined) {
+        const manifest = readProfileManifestIfPresent(this.dir);
+        if (manifest !== undefined && dependencies(manifest)[name] !== undefined) {
           throw new ManagerError("already-installed", name);
         }
         const result = await this.#runPlugin(
@@ -917,7 +946,7 @@ export class DshPlugins {
       });
       child.on("error", (error) => {
         this.#children.delete(child);
-        fail(new ManagerError("spawn-failed", `${resolveDshBinary()}: ${error.message}`));
+        fail(new ManagerError("spawn-failed", `${launch.command}: ${error.message}`));
       });
       child.on("close", (code) => {
         this.#children.delete(child);

@@ -4,7 +4,7 @@ dsh-paseo 给 Paseo 加一个 DeepSeek Harness（`dsh`）原生 provider，让 P
 
 每个 Paseo agent 会话都会在 daemon 所在机器上起一个 `dsh --profile paseo` 子进程，并通过本地 stdio 桥与它通信。进程以你的操作系统用户身份、用 daemon 的环境运行，所以凭据和权限策略就是 DSH 本来用的那一套；插件自己不加沙箱。模型和思考档位的选项来自 DSH 为该 profile 报告的能力目录，因此跟随你的 DSH 配置。
 
-daemon 机器上必须已安装并登录 DeepSeek Harness，`dsh` 要在 daemon 的 `PATH` 上，或通过 provider 的命令覆盖指定。插件需要 Paseo 0.15 或更新版本、daemon 上 Node.js 22 或更新版本，实测基准是 DSH 0.2.1-rc.2。首次使用时它会准备 `~/.dsh/profiles/paseo`；已存在的 profile 文件从不覆盖，所以你手改的 `cordis.patch.yml` 能活过重载。
+daemon 机器上必须已安装并登录 DeepSeek Harness，`dsh` 要在 daemon 的 `PATH` 上，或通过 provider 的命令覆盖指定。插件需要 Paseo 0.16 或更新版本、daemon 上 Node.js 22 或更新版本，实测基准是 DSH 0.2.2-rc.1。首次使用时它会准备 `~/.dsh/profiles/paseo`；已存在的 profile 文件从不覆盖，所以你手改的 `cordis.patch.yml` 能活过重载。
 
 输入框里的功能是交给 DSH 执行的，不是仿造的。附加图片会进 DSH 的附件库；`/` 命令与用户可调用的 skill 来自 DSH 的注册表；插话、计划模式、提问卡与权限确认都按 Paseo 正常的条目渲染。会话菜单能在 profile 声明了的时候切换 agent preset 与权限模式，输入框会显示 DSH 报告的上下文窗口与当前占用，每个回答下面还有一行首字延迟与输出速度。会话按 DSH 会话 id 持久化，重开会话会接着用原来的上下文，Paseo 也能列出并导入已有的 DSH 会话；导入的会话会把消息回放进时间线。DSH Plugins 页面列出 profile 里的 bundle，可以启停、安装声明了 `dsh.bundle` 的 registry 包、卸载并检查更新。包操作走 `dsh plugin`，改动对新会话生效。带 DSH Web 客户端界面的 bundle 会被标注，因为 Paseo 不承载 DSH 的客户端运行时。
 

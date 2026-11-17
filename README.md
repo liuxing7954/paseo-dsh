@@ -49,7 +49,7 @@ DSH 侧是一个 profile bundle。
 先完整读一遍 docs/ADOPTION.md 再动手。不要凭猜测改任何文件。
 
 ■ 第一步：检查前提
-确认 dsh、paseo、node 都在 PATH 上，且 paseo 版本 >= 0.15.0。
+确认 dsh、paseo、node 都在 PATH 上，且 paseo 版本 >= 0.16.0。
 缺任何一样就停下来告诉我，不要替我安装它们。
 
 ■ 第二步：确定用哪个模型
@@ -286,7 +286,7 @@ rm -rf ../.dbg
 
 ## 环境要求
 
-- Paseo ≥ 0.15（需要 direct provider 插件 API）
+- Paseo ≥ 0.16（需要 direct provider 插件 API 与 native child session 事件）
 - DSH 已安装且 `dsh` 在 PATH 上
 - Node ≥ 18（探测工具用了内建 `fetch`）
 
@@ -360,7 +360,7 @@ patch 是本插件自己的发布计数；完整提交记录见
 
 | 版本 | 日期 | 更新内容 |
 | --- | --- | --- |
-| 0.2.22（未发布） | — | **DSH Plugins 管理页**：Paseo 左侧栏新增入口，列出 `paseo-dsh` 所驱动 profile 的 bundle；可启停、安装 npm registry 上声明 `dsh.bundle` 的包、卸载、检查更新与更新。安装/卸载/更新走 `dsh plugin`，启停只改 `dsh.profile.bundles`，复用 profile 的 `package.json.lock`；改动对新会话生效，正在运行的会话保持原样。带 DSH Web/Desktop 客户端界面的 bundle 会标注，界面不会出现在 Paseo。需要 Paseo ≥ 0.15。 |
+| 0.2.22（未发布） | — | **DSH Plugins 管理页**：Paseo 左侧栏新增入口，列出 `paseo-dsh` 所驱动 profile 的 bundle；可启停、安装 npm registry 上声明 `dsh.bundle` 的包、卸载、检查更新与更新。安装/卸载/更新走 `dsh plugin`，启停只改 `dsh.profile.bundles`，复用 profile 的 `package.json.lock`；改动对新会话生效，正在运行的会话保持原样。带 DSH Web/Desktop 客户端界面的 bundle 会标注，界面不会出现在 Paseo。需要 Paseo ≥ 0.16。 |
 | [0.2.21](https://www.npmjs.com/package/paseo-dsh/v/0.2.21) | 2026-11-16 | **跟着应用语言走**：时间线行、思考行、详情抽屉、每回合统计行和时间线样式页现在自带英文与简体中文两套文案，用词看 Paseo 的应用语言（设置 → 通用 → 语言），不再对所有 provider 的会话强推中文，切换语言不用重载插件。**daemon 侧不再猜语言**：读图失败的文案改走 RPC 错误码、由 app 出词；daemon 必须自己写的那两句（坏掉的 preset 标记、切换 preset 失败）直接带中英两种。**没样式的条目补齐**：`todo_write` 与 `ask_user_question` 不再退回宿主的原样式，任务行显示完成数、展开是勾选清单，提问行显示问题本身；不认识的工具统一落到通用行（扳手图标 + 工具名），不会再出现裸条目。需要 Paseo ≥ 0.13.0（插件翻译 API）。 |
 | [0.2.20](https://www.npmjs.com/package/paseo-dsh/v/0.2.20) | 2026-11-16 | **注入的 MCP 真的到位**：Paseo 注入的会话级 MCP 服务、系统提示与工具策略现在一路送到 DSH——桥在会话根上挂载、随会话释放，命名空间冲突与不支持的传输（legacy SSE）直接让打开失败，而不是静默少几个工具。<br>**思考档位不再被悄悄丢掉**：模型与档位改走 DSH 原生 `agent.model` API，初始选择在 `initialize` 就下发；live 切到模型没有声明的档位会明确报错并保留原选择，原来是不吭声地丢弃。<br>**精确预批准**：`toolPolicy` 里点名的工具免确认，但拒绝与取消仍然生效，白名单不会越过拒绝。<br>**打开即组合**：agent 在 `initialize` 就组合完成，组合失败（含 preset 抢占 MCP 命名空间）算作打开失败，不会再留一个半开的会话。 |
 | [0.2.18](https://www.npmjs.com/package/paseo-dsh/v/0.2.18) | 2026-11-12 | **对话 rewind**：用户消息旁出现回退按钮；DSH 侧按事件边界 fork 新会话，Paseo 重开截断后的历史，工作区文件不动；只支持 conversation，`files` / `both` 会明确失败。<br>**DSH 0.2.2 子代理**：bridge 转发 `parentSessionId` / `origin` / `cwd`，Paseo 把 DSH subagent 作为子会话显示，带 `toolCallId`、回合状态、timeline 与 todo 状态；权限标签改用 DSH 显示名，取消的子回合标为 `canceled`。<br>需要 Paseo 0.15.x 与 DSH `0.2.2-rc.1`（Node ≥ 24.9）。 |

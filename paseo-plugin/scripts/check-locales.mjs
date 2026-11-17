@@ -13,9 +13,9 @@
  *   - another language may omit a key (it falls back to English) but may not
  *     invent one, rename a `{{placeholder}}`, or use a non-canonical file name
  *   - a plural base key in `en` needs its `_other` form
- *   - an `en` key nothing in `client/` asks for is dead weight
+ *   - an `en` key nothing in `client/` or `index.client.tsx` asks for is dead weight
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -82,12 +82,20 @@ for (const key of enKeys.keys()) {
 }
 
 // Keys the client can ask for: `t("a.b")`, `messages.message("a.b")`, and the
-// literals used as tool verbs or status keys.
+// literals used as tool verbs or status keys. The client entry point sits next
+// to this script's parent, not under `client/`, and it is exactly where a
+// persistent host label ("plugins.page.title") is registered — so scan both,
+// and recurse so a new `client/<area>/` directory cannot escape the check.
 const used = new Set();
 const clientDir = join(root, "client");
-for (const file of readdirSync(clientDir)) {
-  if (!/\.tsx?$/.test(file)) continue;
-  const source = readFileSync(join(clientDir, file), "utf8");
+const clientFiles = [];
+for (const file of readdirSync(clientDir, { recursive: true })) {
+  if (/\.tsx?$/.test(file)) clientFiles.push(join(clientDir, file));
+}
+const clientEntry = join(root, "index.client.tsx");
+if (existsSync(clientEntry)) clientFiles.push(clientEntry);
+for (const file of clientFiles) {
+  const source = readFileSync(file, "utf8");
   for (const match of source.matchAll(/[mt]\(\s*"((?:timeline|streamStats|settings|plugins)\.[^"]+)"/g)) {
     used.add(match[1]);
   }

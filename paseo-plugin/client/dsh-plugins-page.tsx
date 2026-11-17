@@ -402,9 +402,11 @@ function BundleRow({
       {bundle.client
         ? <Text style={styles.muted}>{t("plugins.bundle.clientNote")}</Text>
         : null}
-      {bundle.platformSupported || bundle.platformReason === undefined || bundle.platformReason === ""
+      {bundle.platformSupported
         ? null
-        : <Text style={styles.muted}>{t("plugins.bundle.platforms", { platforms: bundle.platformReason })}</Text>}
+        : bundle.platformReason === undefined || bundle.platformReason === ""
+          ? <Text style={styles.muted}>{t("plugins.bundle.platformsUnknown")}</Text>
+          : <Text style={styles.muted}>{t("plugins.bundle.platforms", { platforms: bundle.platformReason })}</Text>}
 
       {bundle.rows.length === 0 ? null : (
         <View style={styles.rowTags}>

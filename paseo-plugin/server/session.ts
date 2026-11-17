@@ -189,6 +189,8 @@ export class DshSession {
   #thinkingOption: string | undefined;
   #turnId: string | null = null;
   #turnSeq = 0;
+  /** Suffix for a card id that a sibling session or a retry already took. */
+  #cardSeq = 0;
   #replaySeq = 0;
   /**
    * Live text accumulated from DSH's transient assistant-stream frames. The
@@ -1914,6 +1916,14 @@ export class DshSession {
       const child = this.#requireChild(nativeSessionId);
       permission = { ...permission, id: `${child.id}:${permission.id}`,
         description: [child.title ?? "Subagent", permission.description].filter(Boolean).join(": ") };
+    }
+    // Pending cards are keyed by id, so a duplicate would replace the earlier
+    // promise: that approval would never be answered and DSH would wait for its
+    // own timeout. Sibling sessions can raise the same tool call id, and an
+    // approval without a call id falls back to a shared literal.
+    if (this.#pendingPermissions.has(permission.id)) {
+      permission = { ...permission, id: `${permission.id}:${this.#cardSeq}` };
+      this.#cardSeq += 1;
     }
     // Paseo currently ignores child permission events. Promote cards to the
     // root, retaining their native owner for responses and cancellation.

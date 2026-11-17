@@ -56,7 +56,7 @@ Read docs/ADOPTION.md completely before changing anything. Do not edit files by
 guesswork.
 
 ■ Step 1: check prerequisites
-Confirm that dsh, paseo and node are on PATH and that paseo is >= 0.13.0.
+Confirm that dsh, paseo and node are on PATH and that paseo is >= 0.16.0.
 If anything is missing, stop and tell me; do not install it for me.
 
 ■ Step 2: pick the model route
@@ -317,7 +317,7 @@ a false diagnosis).
 
 ## Requirements
 
-- Paseo ≥ 0.15 (needs the direct-provider plugin API)
+- Paseo ≥ 0.16 (needs the direct-provider plugin API and native child-session events)
 - DSH installed with `dsh` on PATH
 - Node ≥ 18 (the probe tools use the built-in `fetch`)
 
@@ -404,7 +404,7 @@ history is on
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.2.22 (unreleased) | — | **DSH Plugins page**: a new entry in Paseo's sidebar lists the bundles in the profile `paseo-dsh` drives; enable or disable them, install registry packages that declare `dsh.bundle`, remove them, and check for updates. Install, remove and update go through `dsh plugin`; enable/disable only edits `dsh.profile.bundles` under the profile's `package.json.lock`, so changes apply to new sessions and running sessions keep their current bundles. Bundles that ship a DSH Web/Desktop client UI are marked, because that UI does not appear in Paseo. Requires Paseo ≥ 0.15. |
+| 0.2.22 (unreleased) | — | **DSH Plugins page**: a new entry in Paseo's sidebar lists the bundles in the profile `paseo-dsh` drives; enable or disable them, install registry packages that declare `dsh.bundle`, remove them, and check for updates. Install, remove and update go through `dsh plugin`; enable/disable only edits `dsh.profile.bundles` under the profile's `package.json.lock`, so changes apply to new sessions and running sessions keep their current bundles. Bundles that ship a DSH Web/Desktop client UI are marked, because that UI does not appear in Paseo. Requires Paseo ≥ 0.16. |
 | [0.2.21](https://www.npmjs.com/package/paseo-dsh/v/0.2.21) | 2026-11-16 | **Follows the app language**: timeline rows, the thinking row, the detail sheet, the per-turn stats line and the timeline style screen ship English and Simplified Chinese catalogs and take their wording from the Paseo app language (Settings → General → Language) instead of forcing Chinese on every provider's sessions, and a language switch re-words them without a reload. **The unstyled rows are gone**: `todo_write` and `ask_user_question` no longer fall back to the host's own styling; the task row shows the done count and expands to the checklist, and the question row shows the question itself. A tool the plugin does not recognize lands on the generic row (wrench icon and tool name) instead of showing up bare. Requires Paseo ≥ 0.13.0 for the plugin translation API. |
 | [0.2.20](https://www.npmjs.com/package/paseo-dsh/v/0.2.20) | 2026-11-16 | **Injected MCP servers arrive**. The per-session MCP servers, system prompt and tool policy Paseo injects now reach DSH: the bridge mounts them at the session root and disposes them with it, and a namespace collision or an unsupported transport (legacy SSE) fails the open instead of quietly running with fewer tools.<br>**Thinking levels stop disappearing**. Model and effort go through DSH's native `agent.model` API, with the initial choice carried in `initialize`; a live switch to a level the model does not declare now fails loudly and keeps the previous choice, where it used to be dropped without a word.<br>**Exact preapprovals**. Tools named in `toolPolicy` stop asking, while denials and cancellations still win; the allowlist never overrides a refusal.<br>**Compose on open**. The agent is composed during `initialize`, so a composition failure, including a preset shadowing an MCP namespace, is an open failure rather than a half-open session. |
 | [0.2.19](https://www.npmjs.com/package/paseo-dsh/v/0.2.19) | 2026-11-16 | **Tighter timeline**: tool and reasoning rows collapse into a single line, the verb column lines up, icons stay monochrome and spacing tightens toward the host's fixed row gap; program marks and read output are easier to scan.<br>**Detail drawer**: tapping a tool or thought opens a half-height bottom sheet, and desktop can expand details inline; the sheet copies its content and toggles fullscreen, with long command output scrolling inside the block.<br>**More controllable output**: code blocks toggle line wrapping; images inside tool output preview in place, and files above the soft limit ask before they load.<br>**Configurable**: Settings → Plugins → "Timeline style" adjusts tool-row spacing, padding, minimum height, icon gap and command block height; the defaults are the compact style shipped here. |
