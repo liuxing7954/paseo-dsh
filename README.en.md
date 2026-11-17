@@ -206,7 +206,7 @@ names whatever is missing (read-only, changes nothing). When it is green,
 [docs/ADOPTION.md](docs/ADOPTION.md).**
 
 Links: npm package <https://www.npmjs.com/package/paseo-dsh> · Paseo community
-directory <https://paseo.cafe/plugins/dsh-paseo> · discussion
+directory <https://paseo.sh/plugins/liuxing7954/dsh-paseo> · discussion
 <https://github.com/getpaseo/paseo/discussions/6375>
 
 ## Local development / offline install
