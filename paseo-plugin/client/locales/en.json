@@ -97,7 +97,7 @@
       },
       "liveReasoningRowMarginY": {
         "label": "Extra spacing for the streaming thinking row",
-        "hint": "Applies only to the thinking row that is still streaming. Default 8; negative values can overlap."
+        "hint": "Applies only to the thinking row that is still streaming. Added on top of the host's fixed 16px, like the control above. Default -8, the same 8px gap as completed rows. Range -16 to 24."
       },
       "toolRowPaddingY": {
         "label": "Tool row vertical padding (inside the row)",

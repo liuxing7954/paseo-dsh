@@ -593,8 +593,10 @@ function ReasoningRow({ item, theme, layout }: PluginTimelineItemProps<Reasoning
     : firstSentence(text) || t("timeline.thinking.done");
   const revealed = usePacedText(text, streaming && open);
   const spacing = useTimelineStyle();
-  // The live tail is laid out by the host with its own gap; a negative pull
-  // would overlap the row above it, so live rows never go negative.
+  // The host closes every row with a fixed 16px gap, and plugin rows resolve to
+  // that same 16px whatever their phase, so the live row can use the same tight
+  // margin as a completed one. Staying at or above -16 keeps it clear of the row
+  // above.
   const row = {
     ...styles.row,
     marginTop: streaming ? spacing.liveReasoningRowMarginY : spacing.toolRowMarginY,
