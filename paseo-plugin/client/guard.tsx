@@ -113,3 +113,50 @@ export function guardCleanup(label: string, run: () => Cleanup): Cleanup {
     return () => {};
   }
 }
+
+/** Stack/module markers that identify a failure as coming from this plugin. */
+const PLUGIN_MARKERS = /(dsh-paseo|paseo-dsh|dsh-plugins|guard\.tsx|i18n\.ts|icons\.tsx|timeline\.tsx)/i;
+
+function isPluginError(error: unknown): boolean {
+  try {
+    const text = error instanceof Error
+      ? `${error.message}\n${error.stack ?? ""}`
+      : String(error);
+    return PLUGIN_MARKERS.test(text);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Last line of defence for failures the host raises while drawing a plugin
+ * contribution — a sidebar row, a settings icon — which no boundary of ours can
+ * catch. Those arrive here as fatal JS errors and abort the release app.
+ *
+ * Only errors whose message or stack names this plugin are swallowed; every
+ * other fatal error still reaches the host's previous handler unchanged.
+ */
+export function installFatalGuard(): void {
+  const errorUtils = (globalThis as {
+    ErrorUtils?: {
+      getGlobalHandler?: () => (error: unknown, isFatal?: boolean) => void;
+      setGlobalHandler?: (handler: (error: unknown, isFatal?: boolean) => void) => void;
+    };
+  }).ErrorUtils;
+  if (errorUtils === undefined) return;
+  if (typeof errorUtils.getGlobalHandler !== "function"
+    || typeof errorUtils.setGlobalHandler !== "function") {
+    return;
+  }
+  const marker = "__dshPaseoFatalGuard";
+  if ((globalThis as Record<string, unknown>)[marker] === true) return;
+  (globalThis as Record<string, unknown>)[marker] = true;
+  const previous = errorUtils.getGlobalHandler();
+  errorUtils.setGlobalHandler((error, isFatal) => {
+    if (isFatal === true && isPluginError(error)) {
+      report("fatal error swallowed", error);
+      return;
+    }
+    previous(error, isFatal);
+  });
+}

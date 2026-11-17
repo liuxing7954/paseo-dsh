@@ -2,6 +2,7 @@ import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/c
 import { useSettings } from "@getpaseo/plugin/client";
 import { translateForLabel, useTranslation } from "./i18n";
 import { FailedRow, guardAsync, withPluginBoundary } from "./guard";
+import { SlidersIcon } from "./icons";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { TextInput } from "@getpaseo/plugin/client/react-native";
@@ -147,7 +148,7 @@ export function contributeTimelineSettings(client: PluginClientContext): () => v
   return client.addSettingsScreen({
     id: "timeline-style",
     title: persistentLabel("settings.title"),
-    icon: "SlidersHorizontal",
+    icon: SlidersIcon,
     Component: withPluginBoundary<PluginSurfaceProps>(
       "timeline settings",
       TimelineSettingsScreen,
