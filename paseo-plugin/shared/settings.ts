@@ -11,18 +11,25 @@ import { z } from "zod";
 export const timelineStyleSettings = defineSettings({
   id: "timeline-style",
   scope: "host",
-  version: 3,
+  version: 4,
   migrate(values, fromVersion) {
     if (!isRecord(values)) return values;
     const { liveToolRowMarginY: _dropped, liveRowMarginY, ...rest } = values;
     if (fromVersion < 2) {
-      rest["liveReasoningRowMarginY"] = typeof liveRowMarginY === "number" ? liveRowMarginY : 8;
+      rest["liveReasoningRowMarginY"] = typeof liveRowMarginY === "number" ? liveRowMarginY : -8;
+    }
+    // Version 3 added a gap of 8px on top of the host's 16px, so a streaming
+    // thought floated 24px away from the step above it while every completed
+    // row sat 8px away. A stored 8 is that old default rather than a deliberate
+    // choice, so it moves to -8; any other stored value is left alone.
+    if (fromVersion < 4 && rest["liveReasoningRowMarginY"] === 8) {
+      rest["liveReasoningRowMarginY"] = -8;
     }
     return rest;
   },
   schema: z.object({
     toolRowMarginY: z.number().min(-16).max(24).default(-8),
-    liveReasoningRowMarginY: z.number().min(-16).max(24).default(8),
+    liveReasoningRowMarginY: z.number().min(-16).max(24).default(-8),
     toolRowPaddingY: z.number().min(0).max(12).default(0),
     toolRowMinHeight: z.number().min(12).max(64).default(16),
     toolRowGap: z.number().min(0).max(24).default(6),
@@ -40,7 +47,7 @@ export type TimelineStyleKey = keyof TimelineStyleValues;
 
 export const TIMELINE_STYLE_DEFAULTS: TimelineStyleValues = {
   toolRowMarginY: -8,
-  liveReasoningRowMarginY: 8,
+  liveReasoningRowMarginY: -8,
   toolRowPaddingY: 0,
   toolRowMinHeight: 16,
   toolRowGap: 6,
