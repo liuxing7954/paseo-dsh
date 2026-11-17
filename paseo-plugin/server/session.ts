@@ -1850,10 +1850,9 @@ export class DshSession {
 
     const answers = request.questions.map((question, index) => ({
       id: question.id,
-      selected:
-        index === planIndex
-          ? planAnswer(question, response)
-          : selectAnswer(question, headers[index] as string, response),
+      ...(index === planIndex
+        ? { selected: planAnswer(question, response) }
+        : selectAnswer(question, headers[index] as string, response)),
       ...(response.behavior === "deny" && response.message !== undefined
         ? { custom: response.message }
         : {}),
@@ -2084,32 +2083,62 @@ function headerOf(question: DshQuestion, index: number): string {
   return `Question ${index + 1}`;
 }
 
+/** One question's answer in DSH's shape: option labels, and what the user typed. */
+type QuestionAnswer = { selected: string[]; custom?: string };
+
 /**
- * Recover the chosen labels from a permission response. Paseo answers through
- * `updatedInput.answers[<header>]` — a string, comma-joined when multi-select —
- * so `selectedActionId` is only a fallback for button-style resolutions.
+ * Recover one answer from a permission response. DSH keeps the two apart:
+ * `selected` holds option labels only and `custom` holds what the user typed,
+ * which is also how DSH's own question card answers.
+ *
+ * Paseo answers through `updatedInput.answers[<header>]` as one string. A
+ * single-select question returns the chosen label, or the typed text in its
+ * place. A multi-select one joins the chosen labels and then any typed text
+ * with ", ". A label may itself contain ", ", so the string is read against the
+ * question's own labels instead of being split. `selectedActionId` is only a
+ * fallback for button-style resolutions.
  */
 function selectAnswer(
   question: DshQuestion,
   header: string,
   response: ProviderPermissionResponse,
-): string[] {
-  if (response.behavior === "deny") return [];
+): QuestionAnswer {
+  if (response.behavior === "deny") return { selected: [] };
+  const options = question.options ?? [];
   const answers = isRecord(response.updatedInput) ? response.updatedInput["answers"] : undefined;
   const raw = isRecord(answers) ? answers[header] : undefined;
   if (typeof raw === "string" && raw.trim().length > 0) {
-    if (question.multiSelect === true) {
-      return raw
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-    }
-    return [raw.trim()];
+    const text = raw.trim();
+    const labels = options.map((option) => option.label);
+    if (question.multiSelect === true) return readMultiSelect(text, labels);
+    return labels.includes(text) ? { selected: [text] } : { selected: [], custom: text };
   }
-  const options = question.options ?? [];
   const index = Number(response.selectedActionId);
   const label = Number.isInteger(index) ? options[index]?.label : undefined;
-  return label === undefined ? [] : [label];
+  return { selected: label === undefined ? [] : [label] };
+}
+
+/**
+ * Read a multi-select answer as the labels it starts with and the typed text
+ * after them. At each position the longest label that is followed by ", " or
+ * ends the string wins, so "Red, warm" is one option when the question offers
+ * it, not "Red" plus typed "warm". Whatever no label accounts for is the text
+ * the user typed, which Paseo always appends last.
+ */
+function readMultiSelect(text: string, labels: string[]): QuestionAnswer {
+  const longestFirst = [...new Set(labels)]
+    .filter((label) => label.length > 0)
+    .sort((a, b) => b.length - a.length);
+  const selected: string[] = [];
+  let rest = text;
+  for (;;) {
+    const label = longestFirst.find((candidate) => rest === candidate || rest.startsWith(`${candidate}, `));
+    if (label === undefined) break;
+    if (!selected.includes(label)) selected.push(label);
+    rest = rest.slice(label.length + ", ".length);
+  }
+  const custom = rest.trim();
+  return custom === "" ? { selected } : { selected, custom };
 }
 
 /**
@@ -2118,7 +2147,7 @@ function selectAnswer(
  * revise the plan rather than to start implementing it.
  */
 function planAnswer(question: DshQuestion, response: ProviderPermissionResponse): string[] {
-  const picked = selectAnswer(question, headerOf(question, 0), response);
+  const picked = selectAnswer(question, headerOf(question, 0), response).selected;
   if (picked.length > 0) return picked;
   const approve = question.intent?.approve;
   if (response.behavior === "allow" && response.selectedActionId === "implement") {
