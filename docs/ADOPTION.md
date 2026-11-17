@@ -247,6 +247,7 @@ Paseo 自己的实现就是最权威的协议文档，而且比你读类型定�
 |------|------|------|
 | 终止后再发消息就"续不上"了 | `interrupt()` 直接 `kill()` 了子进程 —— **杀进程 = 会话报废** | 接运行时的取消接口（DSH 是 `agent.cancel({kind:"user"})`），只取消当前回合 |
 | 切模型/切模式时"未知会话"报错 | Paseo 会**只开会话读一下能力、从不发消息**，此时会话对象还不存在 | 让配置类操作可排队，别让它们依赖活会话 |
+| 会话空闲一小时后，DSH 的后台任务、还在跑的子代理、定时提醒一起消失 | Paseo 回收空闲会话前只看自己的前台工作；没声明 `session.can_stop_runtime` 就**不问直接回收**，而回收根会话会关掉整个 DSH 进程 | 声明它，用 DSH 自己归档前的判定（`workspace/session-activity`）回答；查不到就失败，Paseo 会保留运行时 |
 
 第二条值得展开：Paseo 的 `listDraftFeatures` 会调 `createSession` 然后读
 `session.features`，**整个过程不 prompt**。如果你的 `planSet`/`configSet` 依赖一个

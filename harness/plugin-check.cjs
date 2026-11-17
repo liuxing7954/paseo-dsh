@@ -12,6 +12,9 @@
  *   2. a non-text content block reaches DSH instead of being collapsed away
  *   3. an unsupported input type reports `request.failed`, not `request.completed`
  *
+ * It also asks the idle-cleanup question (`session.can_stop_runtime`) while the
+ * session is idle and while a turn runs, since a wrong "yes" ends live DSH work.
+ *
  * The plugin is TypeScript, so it has to be compiled before it can be required:
  *
  *   cd paseo-plugin
@@ -94,6 +97,7 @@ const check = (name, pass, detail) => {
       "session.list",
       "session.subsession",
       "session.revert.conversation",
+      "session.can_stop_runtime",
       "permission",
     ],
   });
@@ -157,6 +161,11 @@ const check = (name, pass, detail) => {
   check(
     "session.opened advertises session.subsession",
     opened !== undefined && Array.isArray(opened.capabilities) && opened.capabilities.includes("session.subsession"),
+    `capabilities=[${(opened?.capabilities ?? []).join(", ")}]`,
+  );
+  check(
+    "session.opened advertises session.can_stop_runtime (idle cleanup asks first)",
+    opened !== undefined && Array.isArray(opened.capabilities) && opened.capabilities.includes("session.can_stop_runtime"),
     `capabilities=[${(opened?.capabilities ?? []).join(", ")}]`,
   );
   check(
@@ -461,6 +470,46 @@ const check = (name, pass, detail) => {
     bogusFailed ? bogusFailed.error.message : "(no request.failed)",
   );
   check("unsupported input did not report request.completed", bogusCompleted === undefined);
+
+  // 3b. Idle cleanup asks before it releases a session. The answer is a
+  // `session.can_stop_runtime` event, never `request.completed`, and DSH work
+  // still running in the process (here a turn) must keep the runtime. Releasing
+  // a root ends its process, and whatever ran inside ends with it.
+  const askStop = async (requestId, target) => {
+    const mark = events.length;
+    await conn.send({ type: "session.can_stop_runtime", requestId, sessionId: target });
+    return untilSince(mark, (e) => e.requestId === requestId, `can_stop_runtime ${requestId}`, 15000);
+  };
+  const stopAnswer = (answer) => JSON.stringify(answer).slice(0, 140);
+  const idleStop = await askStop("stop-idle", sessionId);
+  check(
+    "idle session may release its runtime",
+    idleStop.type === "session.can_stop_runtime" && idleStop.canStop === true,
+    stopAnswer(idleStop),
+  );
+  const busyMark = events.length;
+  await conn.send({
+    type: "session.prompt",
+    sessionId,
+    prompt: { input: { type: "message", content: [{ type: "text", text: "Count from 1 to 300, one number per line." }] } },
+  });
+  await untilSince(busyMark, (e) => e.type === "session.turn" && e.sessionId === sessionId && e.state === "started", "busy turn started");
+  const busyStop = await askStop("stop-busy", sessionId);
+  check(
+    "a running turn keeps the runtime",
+    busyStop.type === "session.can_stop_runtime" && busyStop.canStop === false,
+    stopAnswer(busyStop),
+  );
+  await conn.send({ type: "session.interrupt", requestId: "stop-interrupt", sessionId });
+  await untilSince(busyMark, (e) => e.type === "session.turn" && e.sessionId === sessionId && e.state === "completed", "busy turn ended");
+  const afterStop = await askStop("stop-after", sessionId);
+  check(
+    "the runtime may be released again once the turn ends",
+    afterStop.type === "session.can_stop_runtime" && afterStop.canStop === true,
+    stopAnswer(afterStop),
+  );
+  const unknownStop = await askStop("stop-unknown", "no-such-session");
+  check("unknown session -> request.failed (Paseo keeps the runtime)", unknownStop.type === "request.failed", stopAnswer(unknownStop));
 
   // 4. session.list is advertised and the `sessions` input answers it.
   check(

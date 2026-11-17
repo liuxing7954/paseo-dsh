@@ -120,6 +120,18 @@ export interface DshUsage {
 }
 
 /**
+ * One kind of work DSH still runs for a session, as its own archive admission
+ * (`workspace/session-activity`) reports it: `turn`, `job`, `subagent`,
+ * `schedule`, or whatever else the profile composes.
+ */
+export interface DshActivity {
+  /** The native session the work belongs to; a child's jobs are reported under the child. */
+  sessionId: string;
+  kind: string;
+  items?: Array<{ id: string; label?: string }>;
+}
+
+/**
  * One entry of the composer's `/` menu. `kind` decides how running it works:
  * a registered `command` executes in the runtime, a `skill` rides a `/name`
  * user message that DSH's skill tool turns into an injected instruction set.
@@ -382,6 +394,19 @@ export class DshProcess {
 
   async closeChild(sessionId: string): Promise<void> {
     await this.#request("session/close", { sessionId });
+  }
+
+  /**
+   * The DSH work that releasing `sessionId`'s runtime would end; empty only
+   * when nothing would be lost. Paseo waits 10 s for its idle-cleanup answer, so
+   * this gives up first and says why instead of leaving the request to expire.
+   */
+  async activity(sessionId = this.#options.sessionId): Promise<DshActivity[]> {
+    const result = (await this.#request("paseo/activity", { sessionId }, 8000)) as { activity?: unknown } | null;
+    if (!Array.isArray(result?.activity)) {
+      throw new Error("DeepSeek Harness answered paseo/activity without an activity list");
+    }
+    return result.activity as DshActivity[];
   }
 
   /** Select plan mode and return the committed state. */

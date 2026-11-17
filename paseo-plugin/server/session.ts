@@ -27,6 +27,7 @@ import type {
 import type { JsonValue } from "./json-value";
 import {
   DshProcess,
+  type DshActivity,
   type DshAnswer,
   type DshQuestion,
   type DshQuestionRequest,
@@ -90,6 +91,16 @@ function messageOf(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** One log line naming what keeps a runtime alive, e.g. `job "npm test" (in child-1)`. */
+function describeActivity(activity: DshActivity[]): string {
+  return activity
+    .map((entry) => {
+      const items = (entry.items ?? []).map((item) => JSON.stringify(item.label ?? item.id)).join(", ");
+      return `${entry.kind}${items === "" ? "" : ` ${items}`} (in ${entry.sessionId})`;
+    })
+    .join("; ");
 }
 
 /** Tool-call arguments arrive as a JSON string in the durable session log. */
@@ -1035,6 +1046,26 @@ export class DshSession {
     close(sessionId);
   }
 
+  /**
+   * Whether Paseo may release this runtime now without ending DSH work.
+   *
+   * Paseo asks after a session has been idle for an hour, having already ruled
+   * out its own foreground work. What it cannot see runs inside the DSH
+   * process — a background shell, a running subagent, a scheduled reminder —
+   * and releasing the root session shuts that process down. The bridge answers
+   * from DSH's own archive admission; this only maps the Paseo id to the native
+   * one. A closed session has no process left, so nothing can be lost.
+   */
+  async canStopRuntime(sessionId = this.id): Promise<boolean> {
+    if (this.#closed) return true;
+    const native = sessionId === this.id ? this.#dshSessionId : this.#requireChild(sessionId).id;
+    const activity = await this.#require().activity(native);
+    if (activity.length > 0) {
+      this.#options.log(`kept ${sessionId} running for DSH work: ${describeActivity(activity)}`);
+    }
+    return activity.length === 0;
+  }
+
   #requireChild(sessionId: string): ChildSessionState {
     const child = this.#children.get(sessionId);
     if (child === undefined) throw new Error(`unknown native child session: ${sessionId}`);
@@ -1255,8 +1286,10 @@ export class DshSession {
       // These are the capabilities the host actually negotiated for this
       // connection. Advertising the static CAPABILITIES list here would make
       // Paseo reject the child before it is attached.
+      // A child's runtime lives in the parent's process; releasing it drains the
+      // child's subtree, which ends any background job the child still owns.
       capabilities: this.#options.capabilities.filter(capability =>
-        ["permission", "session.subsession"].includes(capability) ||
+        ["permission", "session.subsession", "session.can_stop_runtime"].includes(capability) ||
         (child.mode === "continuable" && ["prompt.message", "prompt.image", "prompt.steer"].includes(capability))),
       restoration: "parent",
       cwd: child.cwd,

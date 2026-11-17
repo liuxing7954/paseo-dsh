@@ -54,6 +54,13 @@ const CAPABILITIES = [
   // never mutated. Files are not part of the rewind contract: the bridge can
   // only reproduce conversation state.
   "session.revert.conversation",
+  // Paseo releases a session after an hour without activity. It rules out its
+  // own foreground work first, but a background shell, a running subagent or a
+  // scheduled reminder lives only in the DSH process, and releasing a root
+  // session ends that process. Without this capability Paseo releases the
+  // session without asking; with it, the bridge answers from DSH's own archive
+  // admission and Paseo keeps the runtime while that work runs.
+  "session.can_stop_runtime",
   "permission",
   "permission.tool_policy",
 ] as const;
@@ -280,6 +287,14 @@ class DshConnection implements ProviderConnection {
       case "session.interrupt": {
         await this.#require(input.sessionId).interrupt(input.sessionId);
         this.#emit({ type: "request.completed", requestId: input.requestId });
+        return;
+      }
+      case "session.can_stop_runtime": {
+        // The answer is this event and nothing else. A failure reaches Paseo as
+        // `request.failed` (see `send`), which keeps the runtime, as a timeout
+        // does; `request.completed` would be an invalid reply.
+        const canStop = await this.#require(input.sessionId).canStopRuntime(input.sessionId);
+        this.#emit({ type: "session.can_stop_runtime", requestId: input.requestId, sessionId: input.sessionId, canStop });
         return;
       }
       case "session.close": {
