@@ -360,6 +360,7 @@ patch 是本插件自己的发布计数；完整提交记录见
 
 | 版本 | 日期 | 更新内容 |
 | --- | --- | --- |
+| 0.2.25 | 2026-11-17 | **行间距合并**：工具行和正在输出的思考行原来各有一个间距配置，现在合并成一个「行之间的额外间距」，默认 -8（宿主固定 16px 之上保留约 8px），流式思考行不再比完成行多出一截空白；旧设置自动迁移。**插件界面语言**：设置页新增「界面语言」，默认跟随 Paseo，可强制 English / 简体中文，切换立即生效。**修复**：iOS 数字键盘现在能为该间距输入负值。 |
 | 0.2.24 | 2026-11-17 | **原生端启动不再被模块加载拖垮**：客户端不再 `import * as react-native`（以及 `@getpaseo/plugin/client` 的 namespace 导入）。Paseo 为 Hermes 把插件 interop 副本变成 eager，namespace 导入会在 bundle 顶层读取模块的全部导出；iOS release 包缺少其中部分模块，Metro 把加载错误当 fatal 上报，绕过插件的所有 try/catch，app 在插件加载约 1 秒后退出。改成具名导入后，bundle 只读取实际用到的导出。感谢 @eerraa 在 #21 的定位与设备 A/B。 |
 | 0.2.23 | 2026-11-17 | **原生端图标不再依赖外部库**：侧边栏与时间线样式页的图标改由插件用纯 React Native View 绘制，不再赌宿主打包了 `react-native-svg` 或图标表里有对应 Lucide 名——这类失败发生在宿主绘制侧边栏时，插件自己的错误边界接不住，release 包会直接 abort。**最后一道兜底**：插件额外接管 JS fatal handler，只吞掉标识为本插件的致命错误并记录，其他错误照旧交给宿主。 |
 | 0.2.22 | 2026-11-17 | **DSH Plugins 管理页**：Paseo 左侧栏新增入口，列出 `paseo-dsh` 所驱动 profile 的 bundle；可启停、安装 npm registry 上声明 `dsh.bundle` 的包、卸载、检查更新与更新。安装/卸载/更新走 `dsh plugin`，启停只改 `dsh.profile.bundles`，复用 profile 的 `package.json.lock`；改动对新会话生效，正在运行的会话保持原样。带 DSH Web/Desktop 客户端界面的 bundle 会标注，界面不会出现在 Paseo。需要 Paseo ≥ 0.16。<br>**Native 端不会再被插件拖垮**：iOS/Android 上的文案改由插件自带的双语 catalog 解析，不再调用宿主的翻译 hook；插件注册给宿主的标题在 native 上传已解析的字符串，侧边栏图标改内联 SVG。时间线行、统计行、设置页和 DSH 插件页都包了错误边界，插件里的渲染、注册和异步错误都在插件内部消化，不会再让 Paseo 闪退。 |
