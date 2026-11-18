@@ -209,9 +209,12 @@ export function TimelineSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   );
 }
 
+/** The display settings screen, for anything that links to it. */
+export const DISPLAY_SETTINGS_ID = "timeline-style";
+
 export function contributeTimelineSettings(client: PluginClientContext): () => void {
   return client.addSettingsScreen({
-    id: "timeline-style",
+    id: DISPLAY_SETTINGS_ID,
     title: persistentLabel("settings.title"),
     icon: SlidersIcon,
     Component: withPluginBoundary<PluginSurfaceProps>(
@@ -219,5 +222,20 @@ export function contributeTimelineSettings(client: PluginClientContext): () => v
       TimelineSettingsScreen,
       (props) => <FailedRow theme={props.theme} message={translateForLabel("settings.renderFailed")} />,
     ),
+  });
+}
+
+/**
+ * Reach the display settings from the Command Center, without going through
+ * Settings, Plugins and the plugin's settings page.
+ */
+export function contributeDisplaySettingsCommand(client: PluginClientContext): () => void {
+  return client.addCommandCenterItem({
+    id: "dsh-display-settings",
+    title: persistentLabel("settings.command"),
+    icon: SlidersIcon,
+    keywords: ["DSH", "display", "timeline", "spacing", "language", "显示", "时间线", "行间距", "语言"],
+    context: "global",
+    onSelect: (command) => command.openSettings(DISPLAY_SETTINGS_ID),
   });
 }
