@@ -19,7 +19,13 @@ import {
   type ProviderRegistration,
   type ProviderThinkingOption,
 } from "@getpaseo/plugin/server/provider";
-import { DshProcess, type DshCatalog } from "./dsh-process";
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { dshHomeDir, profileDir } from "./bootstrap";
+import { BRIDGE_PACKAGE_NAME } from "./bridge-assets";
+import { resolveDshCommand } from "./dsh-command.mjs";
+import { DshProcess, resolveDshBinary, type DshCatalog } from "./dsh-process";
 import { DshSession, MODES, offersThinking, parseRoute } from "./session";
 
 const CAPABILITIES = [
@@ -92,7 +98,81 @@ function profileName(): string {
   return process.env.DSH_PASEO_PROFILE ?? "paseo";
 }
 
-let catalogCache: { at: number; cwd: string; value: DisplayCatalog } | undefined;
+/**
+ * Cached catalogs, one per workspace. An entry is served only while the inputs
+ * that produced it hash the same, so an edit reaches the next read without a
+ * reload. The TTL still bounds what the hash cannot see, such as DSH upgraded in
+ * place.
+ */
+const catalogCache = new Map<string, { at: number; inputs: string; value: DisplayCatalog }>();
+
+/** A catalog read whose inputs changed while it ran; the same read can be retried. */
+class CatalogInputsChangedError extends Error {
+  readonly code = "catalog_inputs_changed";
+
+  constructor() {
+    super("DSH configuration changed while the model list was read; try again / 读取模型列表时 DSH 配置发生了变化，请重试");
+  }
+}
+
+function providerError(error: unknown): { message: string; code?: string } {
+  return error instanceof CatalogInputsChangedError
+    ? { message: error.message, code: error.code }
+    : { message: messageOf(error) };
+}
+
+function byName(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Regular files under `dir` in name order; a missing directory has none. */
+async function filesIn(dir: string, recursive: boolean): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const files: string[] = [];
+  for (const entry of entries.sort((a, b) => byName(a.name, b.name))) {
+    const path = join(dir, entry.name);
+    if (entry.isFile()) files.push(path);
+    else if (recursive && entry.isDirectory()) files.push(...(await filesIn(path, true)));
+  }
+  return files;
+}
+
+/**
+ * Hash everything a catalog read depends on. The probe runs the resolved DSH
+ * command in `cwd` with this process's environment, and DSH composes the catalog
+ * from the home patch, the credentials, the profile's own files and the bridge
+ * installed in the profile. These files are small: hashing them costs far less
+ * than the DSH process a miss starts.
+ */
+async function catalogInputs(cwd: string): Promise<string> {
+  const env = process.env;
+  const profile = profileName();
+  const hash = createHash("sha256");
+  hash.update(
+    JSON.stringify({
+      cwd,
+      launch: resolveDshCommand(resolveDshBinary(env), env, cwd),
+      profile,
+      env: Object.entries(env).sort(([a], [b]) => byName(a, b)),
+    }),
+  );
+  const home = dshHomeDir();
+  const dir = profileDir(profile, home);
+  const files = [
+    join(home, "cordis.patch.yml"),
+    join(home, ".credentials.yaml"),
+    ...(await filesIn(dir, false)),
+    ...(await filesIn(join(dir, "node_modules", BRIDGE_PACKAGE_NAME), true)),
+  ];
+  for (const file of files) {
+    const content = await readFile(file).catch(() => undefined);
+    // Length-prefixed, so no file boundary can be mistaken for another; a
+    // missing file hashes differently from an empty one.
+    hash.update(`\0${file}\0${content === undefined ? "-" : content.length}\0`);
+    if (content !== undefined) hash.update(content);
+  }
+  return hash.digest("hex");
+}
 
 interface DisplayCatalog {
   models: ProviderModel[];
@@ -102,11 +182,18 @@ interface DisplayCatalog {
   defaults: ProviderCatalog;
 }
 
-/** Read the runtime catalog through a short-lived process and cache it. */
-async function loadCatalog(cwd: string): Promise<DisplayCatalog> {
-  if (catalogCache !== undefined && catalogCache.cwd === cwd && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
-    return catalogCache.value;
+/**
+ * Read the runtime catalog: from the cache while its inputs are unchanged,
+ * otherwise through a short-lived process. Aborting `signal` stops that process
+ * and rejects with the signal's reason at once.
+ */
+async function loadCatalog(cwd: string, signal: AbortSignal): Promise<DisplayCatalog> {
+  const inputs = await catalogInputs(cwd);
+  const cached = catalogCache.get(cwd);
+  if (cached !== undefined && cached.inputs === inputs && Date.now() - cached.at < CATALOG_TTL_MS) {
+    return cached.value;
   }
+  signal.throwIfAborted();
   const probe = new DshProcess({
     cwd,
     sessionId: "catalog-probe",
@@ -119,13 +206,28 @@ async function loadCatalog(cwd: string): Promise<DisplayCatalog> {
     onExit: () => {},
     onProtocolError: () => {},
   });
+  let rejectStopped!: (reason: unknown) => void;
+  const stopped = new Promise<never>((_, reject) => {
+    rejectStopped = reject;
+  });
+  // Kill inside `abort()`, so `close()` has stopped the process by the time it
+  // returns, and reject at once instead of waiting for the exit to fail the
+  // pending request.
+  const stop = (): void => {
+    probe.kill();
+    rejectStopped(signal.reason);
+  };
+  signal.addEventListener("abort", stop, { once: true });
   try {
-    await probe.start();
-    const raw: DshCatalog = await probe.catalog();
+    const raw: DshCatalog = await Promise.race([probe.start().then(() => probe.catalog()), stopped]);
     const value = toDisplayCatalog(raw);
-    catalogCache = { at: Date.now(), cwd, value };
+    // A file saved while DSH was reading may or may not be in this result, so it
+    // is cached under neither version of the inputs.
+    if ((await catalogInputs(cwd)) !== inputs) throw new CatalogInputsChangedError();
+    catalogCache.set(cwd, { at: Date.now(), inputs, value });
     return value;
   } finally {
+    signal.removeEventListener("abort", stop);
     probe.kill();
   }
 }
@@ -223,7 +325,8 @@ class DshConnection implements ProviderConnection {
   readonly #sessions = new Map<string, DshSession>();
   readonly #childOwners = new Map<string, DshSession>();
   readonly #pluginId: string;
-  #display: DisplayCatalog | undefined;
+  /** Aborted by `close()`, which stops this connection's catalog probes. */
+  readonly #stopProbes = new AbortController();
   #closed = false;
 
   constructor(capabilities: readonly string[], pluginId: string) {
@@ -243,17 +346,17 @@ class DshConnection implements ProviderConnection {
     try {
       await this.#dispatch(input);
     } catch (error) {
-      const message = messageOf(error);
       if ("requestId" in input && typeof input.requestId === "string") {
-        this.#emit({ type: "request.failed", requestId: input.requestId, error: { message } });
+        this.#emit({ type: "request.failed", requestId: input.requestId, error: providerError(error) });
       } else if ("sessionId" in input && typeof input.sessionId === "string") {
-        this.#emit({ type: "session.runtime_failed", sessionId: input.sessionId, error: { message } });
+        this.#emit({ type: "session.runtime_failed", sessionId: input.sessionId, error: { message: messageOf(error) } });
       }
     }
   }
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#stopProbes.abort(new Error("the provider connection closed / 提供方连接已关闭"));
     const sessions = [...this.#sessions.values()];
     this.#sessions.clear();
     this.#childOwners.clear();
@@ -331,8 +434,10 @@ class DshConnection implements ProviderConnection {
 
   async #catalog(requestId: string, cwd: string | undefined): Promise<void> {
     try {
-      const display = await loadCatalog(cwd ?? process.cwd());
-      this.#display = display;
+      const display = await loadCatalog(cwd ?? process.cwd(), this.#stopProbes.signal);
+      // A closed connection publishes no catalog, not even one read just before
+      // it closed.
+      this.#stopProbes.signal.throwIfAborted();
       this.#emit({ type: "catalog", requestId, catalog: display.defaults });
     } catch (error) {
       // A failed probe must still answer the request. Leaving it unanswered
@@ -342,7 +447,7 @@ class DshConnection implements ProviderConnection {
       this.#emit({
         type: "request.failed",
         requestId,
-        error: { message: messageOf(error) },
+        error: providerError(error),
       });
     }
   }
@@ -376,8 +481,9 @@ class DshConnection implements ProviderConnection {
 
   async #open(input: Extract<ProviderInput, { type: "session.open" }>): Promise<void> {
     const { sessionId, config } = input;
-    const display = this.#display ?? (await loadCatalog(config.cwd));
-    this.#display = display;
+    // Read through the cache rather than reuse this connection's last catalog,
+    // so thinking options are checked against the profile as it is now.
+    const display = await loadCatalog(config.cwd, this.#stopProbes.signal);
     const route = { ...parseRoute(config.model, display.fallbackRoute) };
     // Only an option the model offers reaches initialize; configure() below
     // drops any other with a log, as it does for live changes.
