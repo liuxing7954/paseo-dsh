@@ -81,6 +81,8 @@ export interface DshSessionOptions {
    * advertise only a subset of these, matching their supported controls.
    */
   capabilities: readonly string[];
+  /** ID of the plugin that registered the provider; Paseo accepts this session's plugin items only under it. */
+  pluginId: string;
   emit(event: ProviderEvent): void;
   log(line: string): void;
 }
@@ -1606,7 +1608,7 @@ export class DshSession {
     this.#emitItem({
       type: "plugin",
       id: row.id,
-      pluginId: "dsh-paseo",
+      pluginId: this.#options.pluginId,
       kind: "dsh-stream-stats",
       version: 1,
       data: row.data as JsonValue,

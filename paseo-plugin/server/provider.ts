@@ -68,6 +68,9 @@ const CAPABILITIES = [
 /** Provider id registered with Paseo; distinct from the ACP `deepseek-harness` entry. */
 export const PROVIDER_ID = "deepseek-harness-native";
 
+/** The plugin ID this provider ships under. */
+const DEFAULT_PLUGIN_ID = "dsh-paseo";
+
 /**
  * Last-resort route. The DSH profile's `agent-default-model` is the real source
  * of truth and is read from every catalog; this only backs a profile that
@@ -219,11 +222,13 @@ class DshConnection implements ProviderConnection {
   readonly #listeners = new Set<(event: ProviderEvent) => void>();
   readonly #sessions = new Map<string, DshSession>();
   readonly #childOwners = new Map<string, DshSession>();
+  readonly #pluginId: string;
   #display: DisplayCatalog | undefined;
   #closed = false;
 
-  constructor(capabilities: readonly string[]) {
+  constructor(capabilities: readonly string[], pluginId: string) {
     this.capabilities = capabilities;
+    this.#pluginId = pluginId;
   }
 
   onEvent(listener: (event: ProviderEvent) => void): () => void {
@@ -408,6 +413,7 @@ class DshConnection implements ProviderConnection {
       models: display.models,
       thinkingOptions: display.thinkingOptions,
       capabilities: this.capabilities,
+      pluginId: this.#pluginId,
       emit: (event) => {
         if (event.type === "session.opened" && event.parentSessionId !== undefined) this.#childOwners.set(event.sessionId, session);
         if (event.type === "session.closed") this.#childOwners.delete(event.sessionId);
@@ -523,15 +529,25 @@ class DshConnection implements ProviderConnection {
   }
 }
 
+export interface DshProviderOptions {
+  /**
+   * ID of the plugin that registers this provider. Paseo accepts a plugin's
+   * timeline items only under that plugin's own ID, so a plugin that reuses
+   * this provider must pass its ID. Defaults to `dsh-paseo`.
+   */
+  pluginId?: string;
+}
+
 /** The provider registration Paseo installs for `dsh --profile paseo`. */
-export function createDshProvider(): ProviderRegistration {
+export function createDshProvider(options: DshProviderOptions = {}): ProviderRegistration {
+  const pluginId = options.pluginId ?? DEFAULT_PLUGIN_ID;
   return {
     id: PROVIDER_ID,
     label: "DeepSeek Harness (native)",
     icon: "icon.svg",
     async connect(request) {
       const capabilities = negotiateProviderCapabilities(request.capabilities, CAPABILITIES);
-      return new DshConnection(capabilities);
+      return new DshConnection(capabilities, pluginId);
     },
   };
 }
