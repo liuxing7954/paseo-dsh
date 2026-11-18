@@ -1,25 +1,34 @@
-import type { PluginClientContext } from "@getpaseo/plugin/client";
+import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { guardCleanup, installFatalGuard, report } from "./client/guard";
 import { PluginsIcon } from "./client/icons";
 import { DshPluginsPage } from "./client/dsh-plugins-page";
 import { bootstrapLanguage } from "./client/language";
 import { persistentLabel } from "./client/labels";
 import { contributeStreamStats } from "./client/stream-stats";
-import { contributeTimelineSettings } from "./client/settings-screen";
+import {
+  DISPLAY_SETTINGS_ID,
+  contributeDisplaySettingsCommand,
+  contributeTimelineSettings,
+} from "./client/settings-screen";
 import { contributeTimeline } from "./client/timeline";
 
 
 function buildContributions(client: PluginClientContext) {
   bootstrapLanguage(client);
   const title = persistentLabel("plugins.page.title");
+  const openDisplaySettings = () => client.openSettings(DISPLAY_SETTINGS_ID);
+  const PluginsScreen = (props: PluginSurfaceProps) => (
+    <DshPluginsPage {...props} openDisplaySettings={openDisplaySettings} />
+  );
   const cleanups = [
     guardCleanup("stream stats", () => contributeStreamStats(client)),
     guardCleanup("timeline", () => contributeTimeline(client)),
     guardCleanup("timeline settings", () => contributeTimelineSettings(client)),
+    guardCleanup("display settings command", () => contributeDisplaySettingsCommand(client)),
     guardCleanup("plugins screen", () => client.addScreen({
       id: "dsh-plugins",
       title,
-      Component: DshPluginsPage,
+      Component: PluginsScreen,
     })),
     guardCleanup("plugins sidebar", () => client.addSidebarItem({
       id: "dsh-plugins",

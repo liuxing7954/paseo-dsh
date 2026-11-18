@@ -81,6 +81,7 @@
   },
   "settings": {
     "title": "Display settings",
+    "command": "DSH display settings",
     "intro": "Row spacing and the language this plugin draws in. Language changes apply immediately; row spacing applies when you save.",
     "save": "Save",
     "saving": "Saving…",

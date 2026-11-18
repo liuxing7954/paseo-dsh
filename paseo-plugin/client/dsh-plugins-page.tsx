@@ -482,7 +482,7 @@ function BundleRow({
   );
 }
 
-function DshPluginsPageBody({ theme, host, layout }: PluginSurfaceProps) {
+function DshPluginsPageBody({ theme, host, layout, openDisplaySettings }: DshPluginsPageProps) {
   const compact = layout.compact || layout.platform === "ios" || layout.platform === "android";
   const { t } = useTranslation();
   const translate = t as unknown as Translate;
@@ -730,6 +730,9 @@ function DshPluginsPageBody({ theme, host, layout }: PluginSurfaceProps) {
             }}
             styles={styles}
           />
+          {openDisplaySettings === undefined ? null : (
+            <ActionButton label={t("settings.title")} onPress={openDisplaySettings} styles={styles} />
+          )}
         </View>
       </View>
 
@@ -930,7 +933,12 @@ class SurfaceBoundary extends Component<
   }
 }
 
-export function DshPluginsPage(props: PluginSurfaceProps) {
+export interface DshPluginsPageProps extends PluginSurfaceProps {
+  /** Opens the display settings; the header shows no button without it. */
+  openDisplaySettings?: () => void;
+}
+
+export function DshPluginsPage(props: DshPluginsPageProps) {
   const { t } = useTranslation();
   return (
     <SurfaceBoundary

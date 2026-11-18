@@ -3,7 +3,7 @@ import { translateForLabel } from "./i18n";
 import { messages } from "./messages";
 
 /** Host-owned labels this plugin registers; each is a key in every catalog. */
-export type PersistentKey = "plugins.page.title" | "settings.title";
+export type PersistentKey = "plugins.page.title" | "settings.title" | "settings.command";
 
 /**
  * The screen, sidebar and settings labels are persistent host-owned
