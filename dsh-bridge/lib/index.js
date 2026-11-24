@@ -8,6 +8,7 @@
  * @module dsh-paseo-bridge
  */
 import { Command } from 'commander';
+import { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
 import { exitOnStdinEnd, parseCmdline } from '@deepseek-ai/dsh-cmdline';
 import { PaseoTransport } from './transport.js';
@@ -68,7 +69,7 @@ function normalizeAnswer(result) {
 function startBridge(ctx, config = {}) {
   const transport = new PaseoTransport(process.stdin, process.stdout);
   const server = new PaseoHarnessServer(ctx, transport, { adapters: config.adapters ?? {} });
-  const rootFiber = ctx.root.fiber;
+  const rootFiber = (Context.root === undefined ? ctx.root : ctx[Context.root]).fiber;
   let exitTask;
 
   const disposeAndExit = (code) => {
